@@ -109,7 +109,7 @@
 // 개별 엔티티 수치는 PlayerData / EnemyData / MagicData 참조
 // ============================================================
 const BalanceData = {
-  version: '0.8.0',        // 화면/파일명 버전 표기 (빌드 구분용)
+  version: '0.8.1',        // 화면/파일명 버전 표기 (빌드 구분용)
   field: {
     width: 1200,           // 전투 필드 크기 (논리 픽셀)
     height: 1600,
@@ -226,6 +226,69 @@ const MagicData = {
 
 const MagicOrder = ['magicMissile', 'fireball', 'iceSpear', 'chainLightning'];
 for (const k of Object.keys(MagicData)) MagicData[k].__key = k;
+
+// ============================================================
+// 진화 마법 (연마 ×3 각성 시 기존 마법을 "완전히 다른 패턴"으로 교체) [Task #8]
+// modKey: 강화(magicMods) 승계용 — 진화 후에도 원래 마법의 연마 효과 유지
+// ============================================================
+const EvolvedMagicData = {
+  // 미사일 → 아케인 폭주: 5방향 다발 + 관통 + 확률 폭발
+  arcaneBarrage: {
+    name: '아케인 폭주', evolvedFrom: 'magicMissile', modKey: 'magicMissile',
+    cooldown: 0.55,
+    projectile: {
+      texture: 'missile', speed: 900, radius: 8, damage: 8,
+      lifetime: 1.0, pierce: 2, spin: true, tint: 0xb98cff,
+    },
+    multishot: { count: 5, spreadDeg: 42 },
+    onHitExplode: { chance: 0.35, radius: 58, damage: 6 },
+    charge: { dmgMul: 2.2, radiusMul: 1.4 },
+    feel: { sndFire: 'shoot', sndHit: 'hit', hitParticles: 6, tint: [0xb98cff, 0xd9ffe3] },
+  },
+  // 파이어볼 → 인페르노: 폭발 + 바닥 지속 화염 장판
+  inferno: {
+    name: '인페르노', evolvedFrom: 'fireball', modKey: 'fireball',
+    cooldown: 1.5,
+    projectile: {
+      texture: 'fireball', speed: 320, radius: 12, damage: 4,
+      lifetime: 2.2, scale: 3.6, spin: true, tint: 0xff5a2b,
+    },
+    explosion: { radius: 88, damage: 6, color: 0xff8a3d },
+    groundFire: { radius: 76, dps: 9, duration: 3.6 },
+    charge: { dmgMul: 1.5, radiusMul: 1.5 },
+    feel: { sndFire: 'fireCast', sndHit: 'fireHit', hitParticles: 0, tint: [0xff5a2b, 0xffd23f] },
+  },
+  // 아이스 → 빙하기: 관통 + 명중 시 광역 빙결 폭발(적 정지)
+  glacialAge: {
+    name: '빙하기', evolvedFrom: 'iceSpear', modKey: 'iceSpear',
+    cooldown: 0.95,
+    projectile: {
+      texture: 'icespear', speed: 950, radius: 12, damage: 7,
+      lifetime: 1.1, pierce: 6, spin: false, tint: 0xbfefff,
+    },
+    slow: { factor: 0.25, duration: 3 },
+    freezeNova: { radius: 92, damage: 8, freeze: 1.3 },
+    charge: { dmgMul: 1.8, pierceAdd: 4, widthMul: 2.2 },
+    feel: { sndFire: 'iceCast', sndHit: 'iceHit', hitParticles: 12, tint: [0xbfefff, 0xe8faff] },
+  },
+  // 라이트닝 → 뇌운: 연쇄 + 주위에 자동 낙뢰 영역(패시브)
+  stormCloud: {
+    name: '뇌운', evolvedFrom: 'chainLightning', modKey: 'chainLightning',
+    cooldown: 0.85,
+    projectile: {
+      texture: 'bolt', speed: 850, radius: 8, damage: 6,
+      lifetime: 0.9, spin: true, tint: 0xd6b3ff,
+    },
+    chain: { jumps: 5, range: 260, falloff: 0.82 },
+    storm: { interval: 0.9, radius: 300, damage: 8 },   // 자동 낙뢰 (패시브)
+    charge: { dmgMul: 1.5, jumpsAdd: 4, rangeMul: 1.4 },
+    feel: { sndFire: 'boltCast', sndHit: 'boltHit', hitParticles: 7, tint: [0xd6b3ff, 0xfff27a] },
+  },
+};
+for (const k of Object.keys(EvolvedMagicData)) {
+  EvolvedMagicData[k].__key = k;
+  MagicData[k] = EvolvedMagicData[k];   // 통합 조회 가능하게
+}
 
 
 // ===== js/data/EnemyData.js =====
@@ -410,7 +473,7 @@ const UpgradeData = {
       evolution: {
         id: 'arcaneBarrage', name: '아케인 폭주',
         flavor: '미사일이 폭풍처럼 쏟아진다',
-        bonusDesc: '각성: 미사일 쿨다운 -15%',
+        bonusDesc: '진화: 5방향 다발 + 관통 + 확률 폭발',
         bonus: (run) => { run.stats.magicMods.magicMissile.cdMul *= 0.85; },
       },
     },
@@ -425,7 +488,7 @@ const UpgradeData = {
       evolution: {
         id: 'inferno', name: '인페르노',
         flavor: '대지가 불타오른다',
-        bonusDesc: '각성: 폭발 반경 +25%',
+        bonusDesc: '진화: 폭발 + 바닥 화염 장판',
         bonus: (run) => { run.stats.magicMods.fireball.radiusMul += 0.25; },
       },
     },
@@ -440,7 +503,7 @@ const UpgradeData = {
       evolution: {
         id: 'glacialAge', name: '빙하기',
         flavor: '모든 것을 꿰뚫고 얼린다',
-        bonusDesc: '각성: 관통 +3',
+        bonusDesc: '진화: 관통 + 광역 빙결(적 정지)',
         bonus: (run) => { run.stats.magicMods.iceSpear.pierceAdd += 3; },
       },
     },
@@ -455,7 +518,7 @@ const UpgradeData = {
       evolution: {
         id: 'stormCloud', name: '뇌운',
         flavor: '하늘이 응답한다',
-        bonusDesc: '각성: 연쇄 +2',
+        bonusDesc: '진화: 연쇄 + 자동 낙뢰 영역',
         bonus: (run) => { run.stats.magicMods.chainLightning.jumpsAdd += 2; },
       },
     },
@@ -816,9 +879,11 @@ const GameState = {
     return this.run;
   },
 
-  // 마법별 강화 배율 조회 (런 밖에서도 안전한 기본값)
+  // 마법별 강화 배율 조회 (진화 마법은 modKey로 원본 강화 승계)
   magicMod(key) {
-    if (this.run && this.run.stats.magicMods[key]) return this.run.stats.magicMods[key];
+    const data = (typeof MagicData !== 'undefined') && MagicData[key];
+    const realKey = (data && data.modKey) ? data.modKey : key;
+    if (this.run && this.run.stats.magicMods[realKey]) return this.run.stats.magicMods[realKey];
     return { dmgMul: 1, cdMul: 1, radiusMul: 1, pierceAdd: 0, jumpsAdd: 0 };
   },
 
@@ -872,6 +937,14 @@ class MagicBook {
   add(key) {
     if (this.owns(key)) return false;
     this.magics.push(new Magic(key));
+    return true;
+  }
+
+  // 진화: 기존 마법을 진화형으로 교체 (같은 슬롯 유지)
+  evolve(fromKey, toKey) {
+    const i = this.magics.findIndex(m => m.data.__key === fromKey);
+    if (i < 0) return false;
+    this.magics[i] = new Magic(toKey);
     return true;
   }
 
@@ -1241,12 +1314,18 @@ class Enemy extends Phaser.GameObjects.Container {
     // 둔화 상태
     this.slowFactor = 1;
     this.slowT = 0;
+    this.frozenT = 0;   // 빙결(완전 정지)
   }
 
   applySlow(factor, duration) {
     // 더 강한 둔화로 갱신, 지속시간 리셋
     this.slowFactor = Math.min(this.slowFactor, factor);
     this.slowT = Math.max(this.slowT, duration);
+  }
+
+  // 빙결: 일정 시간 완전 정지 (빙하기 진화)
+  freeze(duration) {
+    this.frozenT = Math.max(this.frozenT, duration);
   }
 
   // 하위 클래스가 스프라이트/그림자/HP바를 붙인 뒤 호출
@@ -1279,9 +1358,14 @@ class Enemy extends Phaser.GameObjects.Container {
     const fr = Math.exp(-dt / 0.12);
     this.kvx *= fr; this.kvy *= fr;
 
-    // 넉백이 약해지면 AI 이동 허용 (맞는 중엔 밀림 우선)
+    // 넉백이 약해지면 AI 이동 허용 (맞는 중엔 밀림 우선). 빙결 중엔 정지.
     const knockActive = Math.hypot(this.kvx, this.kvy) > 30;
-    if (!knockActive) this._ai(dt, player);
+    if (this.frozenT > 0) {
+      this.frozenT -= dt;
+      if (this.flashT <= 0) this.sprite.setTint(0x8fd4ff);
+    } else if (!knockActive) {
+      this._ai(dt, player);
+    }
 
     // 필드 경계
     const B = BalanceData.field, m = 20;
@@ -1717,18 +1801,30 @@ class MagicManager {
     this.scene = scene;
     this.pool = [];
     this.dmgTexts = [];
+    this.zones = [];      // 인페르노 바닥 화염 장판
+    this.stormT = 0;      // 뇌운 자동 낙뢰 타이머
   }
 
   cast(magicData, x, y, dx, dy, opts = {}) {
-    const p = this._get();
-    const mod = GameState.magicMod(magicData.__key);   // 마법별 연마 배율
+    const mod = GameState.magicMod(magicData.__key);   // 마법별 연마 배율(진화는 modKey 승계)
     const mul = ((GameState.run && GameState.run.stats.damageMul) || 1) * mod.dmgMul;
-    p.fire(x, y, dx, dy, magicData.projectile, mul, {
-      ...opts, magicKey: magicData.__key, magicCharge: magicData.charge,
-      modPierceAdd: mod.pierceAdd,
-    });
-    p._magic = magicData;
-    p._mods = mod;
+
+    // 다발 발사 (아케인 폭주): 부채꼴로 여러 발
+    const ms = magicData.multishot;
+    const shots = ms ? ms.count : 1;
+    const spread = ms ? (ms.spreadDeg * Math.PI / 180) : 0;
+    const base = Math.atan2(dy, dx);
+    for (let s = 0; s < shots; s++) {
+      const a = shots === 1 ? base : base - spread / 2 + (spread * s) / (shots - 1);
+      const ndx = Math.cos(a), ndy = Math.sin(a);
+      const p = this._get();
+      p.fire(x, y, ndx, ndy, magicData.projectile, mul, {
+        ...opts, magicKey: magicData.__key, magicCharge: magicData.charge,
+        modPierceAdd: mod.pierceAdd,
+      });
+      p._magic = magicData;
+      p._mods = mod;
+    }
     // 머즐 파티클 (마법 색상)
     this._emit(x + dx * 26, y + dy * 26, opts.charged ? 8 : 4, magicData.__key);
   }
@@ -1758,6 +1854,10 @@ class MagicManager {
       t.obj.setAlpha(Math.max(0, t.life / t.maxLife));
       if (t.life <= 0) t.obj.setActive(false).setVisible(false);
     }
+
+    // 진화 마법: 바닥 화염 장판 + 뇌운 자동 낙뢰
+    this._updateZones(dt);
+    this._stormTick(dt);
   }
 
   _onHit(p, enemy) {
@@ -1796,6 +1896,17 @@ class MagicManager {
     // 기타 마법별 행동
     if (magic.slow) this._applySlow(enemy, magic.slow);
     if (magic.chain) this._chain(enemy, p.damage, magic.chain, feel, p.hitSet, charged, magic.charge, p._mods);
+
+    // ---- 진화 마법 특수 효과 ----
+    // 아케인 폭주: 확률 소폭발
+    if (magic.onHitExplode && Math.random() < magic.onHitExplode.chance) {
+      this._explode(p.x, p.y, { radius: magic.onHitExplode.radius, damage: magic.onHitExplode.damage, color: 0xb98cff },
+        feel, false, null, p._mods);
+    }
+    // 인페르노: 바닥 지속 화염 장판
+    if (magic.groundFire) this._spawnGroundFire(p.x, p.y, magic.groundFire, p._mods);
+    // 빙하기: 명중 시 광역 빙결 폭발(적 정지)
+    if (magic.freezeNova) this._freezeNova(p.x, p.y, magic.freezeNova, p._mods);
 
     // 관통 처리
     p.hitSet.add(enemy);
@@ -1867,6 +1978,96 @@ class MagicManager {
     enemy.applySlow(slow.factor, slow.duration);
   }
 
+  // ---- [진화] 인페르노: 바닥 지속 화염 장판 ----
+  _spawnGroundFire(x, y, gf, mods) {
+    const R = gf.radius * ((mods && mods.radiusMul) || 1);
+    const sc = this.scene;
+    const circle = sc.add.circle(x, y + 24, R, 0xff5a2b, 0.22).setDepth(6);
+    const ring = sc.add.circle(x, y + 24, R, 0xffb04a, 0).setStrokeStyle(3, 0xffb04a, 0.5).setDepth(6);
+    if (sc.worldRoot) { sc.worldRoot.add(circle); sc.worldRoot.add(ring); }
+    sc.tweens.add({ targets: circle, alpha: 0.10, duration: 500, yoyo: true, repeat: -1 });
+    const zone = { x, y: y + 24, r: R, dps: gf.dps * (((GameState.run && GameState.run.stats.damageMul) || 1)) * ((mods && mods.dmgMul) || 1), life: gf.duration, tick: 0, circle, ring };
+    this.zones.push(zone);
+    // 파티클 불씨
+    if (sc.fxEmitters && sc.fxEmitters.fireball) sc.fxEmitters.fireball.emitParticleAt(x, y + 24, 8);
+  }
+
+  // ---- [진화] 빙하기: 명중 지점 광역 빙결 폭발(피해 + 정지) ----
+  _freezeNova(x, y, nova, mods) {
+    const R = nova.radius * ((mods && mods.radiusMul) || 1);
+    const sc = this.scene;
+    const burst = sc.add.circle(x, y, R * 0.4, 0xbfefff, 0.5).setDepth(25);
+    if (sc.worldRoot) sc.worldRoot.add(burst);
+    sc.tweens.add({ targets: burst, radius: R, alpha: 0, duration: 340, ease: 'Cubic.Out', onComplete: () => burst.destroy() });
+    const dmg = nova.damage * (((GameState.run && GameState.run.stats.damageMul) || 1)) * ((mods && mods.dmgMul) || 1);
+    for (const e of sc.enemyManager.enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.x - x, (e.y - 24) - y);
+      if (d < R + e.radius) {
+        const hit = this._crit(dmg);
+        e.takeDamage(hit.dmg, x, y, false, 0, 0);
+        if (e.freeze) e.freeze(nova.freeze);
+      }
+    }
+    SoundManager.iceHit && SoundManager.iceHit();
+    sc.gameFeel.shake(0.004, 100);
+  }
+
+  // ---- [진화] 뇌운: 플레이어 주변 자동 낙뢰 (패시브) ----
+  _stormTick(dt) {
+    if (!this.scene.player) return;
+    const book = this.scene.player.magicBook;
+    // 보유한 마법 중 storm 속성 탐색
+    let storm = null;
+    for (const m of book.magics) if (m.data.storm) { storm = m.data.storm; break; }
+    if (!storm) { this.stormT = 0; return; }
+    this.stormT -= dt;
+    if (this.stormT > 0) return;
+    this.stormT = storm.interval;
+    const px = this.scene.player.x, py = this.scene.player.y - 20;
+    // 범위 내 무작위 적에게 낙뢰
+    const targets = this.scene.enemyManager.enemies.filter(e => e.alive && Math.hypot(e.x - px, e.y - py) < storm.radius);
+    if (!targets.length) return;
+    const t = targets[Math.floor(Math.random() * targets.length)];
+    const dmg = storm.damage * (((GameState.run && GameState.run.stats.damageMul) || 1));
+    const hit = this._crit(dmg);
+    t.takeDamage(hit.dmg, t.x, t.y - 40, false, 0, 0);
+    this._showDamage(t.x, t.y - 30, Math.round(hit.dmg), false, hit.crit);
+    // 낙뢰 비주얼: 위에서 내려오는 지그재그
+    const g = this.scene.add.graphics().setDepth(23);
+    if (this.scene.worldRoot) this.scene.worldRoot.add(g);
+    g.lineStyle(3, 0xd6b3ff, 0.95);
+    let ly = t.y - 300, lx = t.x + (Math.random() * 20 - 10);
+    g.beginPath(); g.moveTo(lx, ly);
+    while (ly < t.y - 20) { ly += 30; lx = t.x + (Math.random() * 30 - 15); g.lineTo(lx, ly); }
+    g.lineTo(t.x, t.y - 20); g.strokePath();
+    this._emit(t.x, t.y - 20, 6, 'chainLightning');
+    this.scene.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() });
+    SoundManager.boltHit && SoundManager.boltHit();
+  }
+
+  // ---- 장판 갱신(피해 틱) ----
+  _updateZones(dt) {
+    for (const z of this.zones) {
+      z.life -= dt; z.tick -= dt;
+      if (z.tick <= 0) {
+        z.tick = 0.4;   // 0.4초마다 피해
+        const dmg = z.dps * 0.4;
+        for (const e of this.scene.enemyManager.enemies) {
+          if (!e.alive) continue;
+          if (Math.hypot(e.x - z.x, (e.y - 24) - z.y) < z.r + e.radius) {
+            e.takeDamage(dmg, z.x, z.y, false, 0, 0);
+          }
+        }
+      }
+      if (z.life <= 0) {
+        this.scene.tweens.killTweensOf(z.circle);
+        z.circle.destroy(); z.ring.destroy();
+      }
+    }
+    this.zones = this.zones.filter(z => z.life > 0);
+  }
+
   // ---- 연쇄: 가장 가까운 미타격 적으로 점프 ----
   _chain(fromEnemy, baseDmg, chain, feel, hitSet, charged, charge, mods) {
     const jumps = chain.jumps + (charged ? ((charge && charge.jumpsAdd) || 0) : 0)
@@ -1919,7 +2120,12 @@ class MagicManager {
   }
 
   _emit(x, y, count, emitterKey) {
-    const em = (emitterKey && this.scene.fxEmitters[emitterKey]) || this.scene.fxBurst;
+    let em = emitterKey && this.scene.fxEmitters[emitterKey];
+    // 진화 마법은 원본 마법의 색상 이미터 사용 (modKey)
+    if (!em && emitterKey && typeof MagicData !== 'undefined' && MagicData[emitterKey] && MagicData[emitterKey].modKey) {
+      em = this.scene.fxEmitters[MagicData[emitterKey].modKey];
+    }
+    em = em || this.scene.fxBurst;
     em.emitParticleAt(x, y, count);
   }
 
@@ -2459,7 +2665,10 @@ class MagicSelector {
     this.scene = scene;
     this.book = magicBook;
     this.onChange = onChange;
-    this.icons = { magicMissile: 'missile', fireball: 'fireball', iceSpear: 'icespear', chainLightning: 'bolt' };
+    this.icons = {
+      magicMissile: 'missile', fireball: 'fireball', iceSpear: 'icespear', chainLightning: 'bolt',
+      arcaneBarrage: 'missile', inferno: 'fireball', glacialAge: 'icespear', stormCloud: 'bolt',
+    };
     this.buttons = [];
     this.uiObjects = [];
     this.build();
@@ -2879,7 +3088,7 @@ class Overlays {
 
     // 설명
     const descText = awakens
-      ? `${u.desc}\n★ ${u.evolution.name} 각성! ${u.evolution.bonusDesc.replace('각성: ', '+')}`
+      ? `★ ${u.evolution.name} 진화!\n${u.evolution.bonusDesc.replace('진화: ', '')}`
       : u.desc;
     cont.add(sc.add.text(tx, cardH / 2 - 26, descText, {
       fontFamily: 'monospace', fontSize: '12px', color: awakens ? '#ffe9a8' : '#c9f2d0',
@@ -3590,8 +3799,19 @@ class GameScene extends Phaser.Scene {
       this.player.applyBonusHp();
       this.hud.setHp(this.player.hp, this.player.effectiveMaxHp());
 
-      // 각성 연출
-      if (result.awakened && picked.evolution) {
+      // 각성 → 진화: 마법을 완전히 다른 패턴으로 교체
+      if (result.awakened && picked.evolution && picked.magicKey) {
+        const evoKey = picked.evolution.id;
+        if (this.player.magicBook.evolve(picked.magicKey, evoKey)) {
+          this.magicSelector.rebuild();
+          this.player.magicBook.setActiveByKey(evoKey);
+          this.magicSelector.select(this.player.magicBook.activeIndex, true);
+          this.hud.announce('★ 진화 ★', picked.evolution.name, 0xffd23f);
+          this.gameFeel.flash(0xffd23f, 140);
+          this.gameFeel.shake(0.006, 240);
+          SoundManager.victory && SoundManager.victory();
+        }
+      } else if (result.awakened && picked.evolution) {
         this.hud.announce('★ 각성 ★', picked.evolution.name, 0xffd23f);
         this.gameFeel.flash(0xffd23f, 120);
         this.gameFeel.shake(0.005, 200);
