@@ -109,7 +109,7 @@
 // 개별 엔티티 수치는 PlayerData / EnemyData / MagicData 참조
 // ============================================================
 const BalanceData = {
-  version: '0.8.1',        // 화면/파일명 버전 표기 (빌드 구분용)
+  version: '0.8.5',        // 화면/파일명 버전 표기 (빌드 구분용)
   field: {
     width: 1200,           // 전투 필드 크기 (논리 픽셀)
     height: 1600,
@@ -174,52 +174,56 @@ const PlayerData = {
 const MagicData = {
   // 1) 매직 미사일 — 단일 폭딜 (시작 마법). 빠른 연사 + 높은 단일 DPS
   magicMissile: {
-    name: '매직 미사일',
+    name: '매직 미사일', element: '무',
+    mp: { max: 100, regen: 26, cost: 11 },
     cooldown: 0.42,
     projectile: {
       texture: 'missile', speed: 820, radius: 7, damage: 8,     // 단일 최고 뎀
       lifetime: 1.0, scale: 3, spin: true, tint: 0x7ee8ff,
     },
-    charge: { dmgMul: 2.6, radiusMul: 1.5 },                    // 차지: 순수 폭딜
+    charge: { dmgMul: 3.4, radiusMul: 1.5 },                    // 차지: 순수 폭딜
     feel: { sndFire: 'shoot', sndHit: 'hit', hitParticles: 6, tint: [0x7ee8ff, 0xd9ffe3] },
   },
 
   // 2) 파이어볼 — 광역 폭발. 느린 탄속, 넓은 범위. (독주 방지 위해 하향)
   fireball: {
-    name: '파이어볼',
+    name: '파이어볼', element: '화',
+    mp: { max: 100, regen: 15, cost: 42 },
     cooldown: 1.25,                                            // 1.0 → 1.25 (독주 억제)
     projectile: {
       texture: 'fireball', speed: 300, radius: 11, damage: 3,   // 직격 딜 낮음
       lifetime: 2.2, scale: 3.4, spin: true, tint: 0xff6b2b,
     },
     explosion: { radius: 82, damage: 6, color: 0xff8a3d },      // R100/8 → R82/6
-    charge: { dmgMul: 1.5, radiusMul: 1.5 },                    // 차지 범위 1.7 → 1.5
+    charge: { dmgMul: 2.0, radiusMul: 1.5 },                    // 차지 범위 1.7 → 1.5
     feel: { sndFire: 'fireCast', sndHit: 'fireHit', hitParticles: 0, tint: [0xff6b2b, 0xffd23f] },
   },
 
   // 3) 아이스 스피어 — 관통 유틸. 일렬 관통 + 강력 둔화 (딜 소폭 상향)
   iceSpear: {
-    name: '아이스 스피어',
+    name: '아이스 스피어', element: '수',
+    mp: { max: 100, regen: 20, cost: 24 },
     cooldown: 0.72,
     projectile: {
       texture: 'icespear', speed: 950, radius: 12, damage: 6,   // 5 → 6
       lifetime: 1.1, pierce: 4, spin: false, tint: 0x8fe3ff,
     },
     slow: { factor: 0.35, duration: 2.8 },                      // 둔화 강력(65%)
-    charge: { dmgMul: 1.8, pierceAdd: 4, widthMul: 2.2 },
+    charge: { dmgMul: 2.3, pierceAdd: 4, widthMul: 2.2 },
     feel: { sndFire: 'iceCast', sndHit: 'iceHit', hitParticles: 12, tint: [0x8fe3ff, 0xe8faff] },
   },
 
   // 4) 체인 라이트닝 — 산개 대응. 흩어진 적 연쇄 (딜 소폭 상향)
   chainLightning: {
-    name: '체인 라이트닝',
+    name: '체인 라이트닝', element: '뇌',
+    mp: { max: 100, regen: 20, cost: 22 },
     cooldown: 0.82,
     projectile: {
       texture: 'bolt', speed: 850, radius: 8, damage: 6,        // 5 → 6
       lifetime: 0.9, spin: true, tint: 0xfff27a,
     },
     chain: { jumps: 4, range: 250, falloff: 0.82 },
-    charge: { dmgMul: 1.5, jumpsAdd: 4, rangeMul: 1.4 },
+    charge: { dmgMul: 2.0, jumpsAdd: 4, rangeMul: 1.4 },
     feel: { sndFire: 'boltCast', sndHit: 'boltHit', hitParticles: 7, tint: [0xfff27a, 0xb98cff] },
   },
 };
@@ -234,7 +238,8 @@ for (const k of Object.keys(MagicData)) MagicData[k].__key = k;
 const EvolvedMagicData = {
   // 미사일 → 아케인 폭주: 5방향 다발 + 관통 + 확률 폭발
   arcaneBarrage: {
-    name: '아케인 폭주', evolvedFrom: 'magicMissile', modKey: 'magicMissile',
+    name: '아케인 폭주', element: '무', evolvedFrom: 'magicMissile', modKey: 'magicMissile',
+    mp: { max: 100, regen: 22, cost: 20 },
     cooldown: 0.55,
     projectile: {
       texture: 'missile', speed: 900, radius: 8, damage: 8,
@@ -242,12 +247,13 @@ const EvolvedMagicData = {
     },
     multishot: { count: 5, spreadDeg: 42 },
     onHitExplode: { chance: 0.35, radius: 58, damage: 6 },
-    charge: { dmgMul: 2.2, radiusMul: 1.4 },
+    charge: { dmgMul: 2.8, radiusMul: 1.4 },
     feel: { sndFire: 'shoot', sndHit: 'hit', hitParticles: 6, tint: [0xb98cff, 0xd9ffe3] },
   },
   // 파이어볼 → 인페르노: 폭발 + 바닥 지속 화염 장판
   inferno: {
-    name: '인페르노', evolvedFrom: 'fireball', modKey: 'fireball',
+    name: '인페르노', element: '화', evolvedFrom: 'fireball', modKey: 'fireball',
+    mp: { max: 100, regen: 13, cost: 50 },
     cooldown: 1.5,
     projectile: {
       texture: 'fireball', speed: 320, radius: 12, damage: 4,
@@ -255,12 +261,13 @@ const EvolvedMagicData = {
     },
     explosion: { radius: 88, damage: 6, color: 0xff8a3d },
     groundFire: { radius: 76, dps: 9, duration: 3.6 },
-    charge: { dmgMul: 1.5, radiusMul: 1.5 },
+    charge: { dmgMul: 2.0, radiusMul: 1.5 },
     feel: { sndFire: 'fireCast', sndHit: 'fireHit', hitParticles: 0, tint: [0xff5a2b, 0xffd23f] },
   },
   // 아이스 → 빙하기: 관통 + 명중 시 광역 빙결 폭발(적 정지)
   glacialAge: {
-    name: '빙하기', evolvedFrom: 'iceSpear', modKey: 'iceSpear',
+    name: '빙하기', element: '수', evolvedFrom: 'iceSpear', modKey: 'iceSpear',
+    mp: { max: 100, regen: 17, cost: 32 },
     cooldown: 0.95,
     projectile: {
       texture: 'icespear', speed: 950, radius: 12, damage: 7,
@@ -268,12 +275,13 @@ const EvolvedMagicData = {
     },
     slow: { factor: 0.25, duration: 3 },
     freezeNova: { radius: 92, damage: 8, freeze: 1.3 },
-    charge: { dmgMul: 1.8, pierceAdd: 4, widthMul: 2.2 },
+    charge: { dmgMul: 2.3, pierceAdd: 4, widthMul: 2.2 },
     feel: { sndFire: 'iceCast', sndHit: 'iceHit', hitParticles: 12, tint: [0xbfefff, 0xe8faff] },
   },
   // 라이트닝 → 뇌운: 연쇄 + 주위에 자동 낙뢰 영역(패시브)
   stormCloud: {
-    name: '뇌운', evolvedFrom: 'chainLightning', modKey: 'chainLightning',
+    name: '뇌운', element: '뇌', evolvedFrom: 'chainLightning', modKey: 'chainLightning',
+    mp: { max: 100, regen: 19, cost: 26 },
     cooldown: 0.85,
     projectile: {
       texture: 'bolt', speed: 850, radius: 8, damage: 6,
@@ -281,7 +289,7 @@ const EvolvedMagicData = {
     },
     chain: { jumps: 5, range: 260, falloff: 0.82 },
     storm: { interval: 0.9, radius: 300, damage: 8 },   // 자동 낙뢰 (패시브)
-    charge: { dmgMul: 1.5, jumpsAdd: 4, rangeMul: 1.4 },
+    charge: { dmgMul: 2.0, jumpsAdd: 4, rangeMul: 1.4 },
     feel: { sndFire: 'boltCast', sndHit: 'boltHit', hitParticles: 7, tint: [0xd6b3ff, 0xfff27a] },
   },
 };
@@ -900,19 +908,40 @@ const GameState = {
 
 // ===== js/magic/Magic.js =====
 // ============================================================
-// Magic — 마법 1종의 런타임 상태 [GPT 요청 ⑤⑧]
-// 데이터(MagicData)와 시전 로직을 연결. 쿨다운을 스스로 관리한다.
-// 계층: Magic → (MagicManager가 생성) Projectile → Explosion → StatusEffect
+// Magic — 마법 1종의 런타임 상태 [Task #8: MP 게이지 추가]
+// 쿨다운(발사 속도) + MP(지속력)를 함께 관리.
+//  · MP는 시간당 조금씩 회복
+//  · 시전 시 cost만큼 소모 (센 마법일수록 큼)
+//  · MP가 cost보다 적으면 시전 불가 → 다른 원소로 전환 유도
 // ============================================================
 class Magic {
   constructor(key) {
     this.key = key;
     this.data = MagicData[key];
     this.cooldownLeft = 0;
+    const mp = this.data.mp || { max: 100, regen: 20, cost: 15 };
+    this.maxMp = mp.max;
+    this.mp = mp.max;      // 시작은 가득
+    this.regen = mp.regen;
+    this.cost = mp.cost;
   }
-  update(dt) { this.cooldownLeft = Math.max(0, this.cooldownLeft - dt); }
-  get ready() { return this.cooldownLeft <= 0; }
-  startCooldown(mul = 1) { this.cooldownLeft = this.data.cooldown * mul; }
+
+  update(dt, regenMul = 1) {
+    this.cooldownLeft = Math.max(0, this.cooldownLeft - dt);
+    this.mp = Math.min(this.maxMp, this.mp + this.regen * regenMul * dt);
+  }
+
+  get mpRatio() { return this.maxMp > 0 ? this.mp / this.maxMp : 1; }
+  get canAfford() { return this.mp >= this.cost; }
+  get ready() { return this.cooldownLeft <= 0 && this.canAfford; }
+
+  // 시전: 쿨다운 시작 + MP 소모
+  cast(cdMul = 1) {
+    this.cooldownLeft = this.data.cooldown * cdMul;
+    this.mp = Math.max(0, this.mp - this.cost);
+  }
+  // (구 호환) — GameScene이 호출
+  startCooldown(cdMul = 1) { this.cast(cdMul); }
 }
 
 
@@ -961,7 +990,16 @@ class MagicBook {
     this.activeIndex = (this.activeIndex + dir + this.magics.length) % this.magics.length;
     return this.active;
   }
-  update(dt) { for (const m of this.magics) m.update(dt); }
+  update(dt) {
+    const charging = !!this.charging;
+    const inactiveMul = this.inactiveRegenMul === undefined ? 1.6 : this.inactiveRegenMul;
+    const chargeMul = this.chargeRegenMul === undefined ? 0.3 : this.chargeRegenMul;
+    for (let i = 0; i < this.magics.length; i++) {
+      // 활성 마법: 충전 중이면 느리게, 아니면 보통. 안 쓰는 마법: 빠르게 회복(순환 유도).
+      const mul = (i === this.activeIndex) ? (charging ? chargeMul : 1) : inactiveMul;
+      this.magics[i].update(dt, mul);
+    }
+  }
 }
 
 
@@ -1053,6 +1091,11 @@ class Player extends Phaser.GameObjects.Container {
     // 그림자 (전단의 영향을 받지 않는 접지 기준)
     this.shadow = scene.add.ellipse(0, 2, 44, 12, 0x000000, 0.22);
     this.add(this.shadow);
+
+    // 진화 시 켜지는 마력 오라 (평소엔 숨김)
+    this.aura = scene.add.circle(0, -24, 34, 0xb98cff, 0).setBlendMode(Phaser.BlendModes.ADD);
+    this.add(this.aura);
+    this._auraOn = false;
 
     // ---- 슬라이스 조립 ----
     this.visual = scene.add.container(0, 4);
@@ -1187,6 +1230,37 @@ class Player extends Phaser.GameObjects.Container {
         this.shadow.setScale(1, 1);
       }
     }
+  }
+
+  // 마법 진화 시 켜지는 마력 오라 (외형 변화 체감 — 진한 광채)
+  showEvolveAura() {
+    const sc = this.scene, ADD = Phaser.BlendModes.ADD;
+    // 진화 순간: 이중 링 폭발
+    for (let i = 0; i < 2; i++) {
+      const burst = sc.add.circle(this.x, this.y - 24, 16, i ? 0xffd23f : 0xc23bff, 0.85)
+        .setBlendMode(ADD).setDepth(30);
+      if (sc.worldRoot) sc.worldRoot.add(burst);
+      sc.tweens.add({ targets: burst, radius: 95, alpha: 0, duration: 520 + i * 140,
+        ease: 'Cubic.Out', delay: i * 90, onComplete: () => burst.destroy() });
+    }
+    if (sc.fxBurst) sc.fxBurst.emitParticleAt(this.x, this.y - 24, 22);
+
+    if (this._auraOn) return;
+    this._auraOn = true;
+
+    // 진한 마력 광채 (바깥 진보라 + 안쪽 밝은 코어, 상시 맥동)
+    this.aura.setFillStyle(0x9b1fe0, 0.5);
+    this.aura.setScale(1.25);
+    sc.tweens.add({ targets: this.aura, alpha: 0.68, scale: 1.5, duration: 900,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    this.auraCore = sc.add.circle(0, -24, 20, 0xe08bff, 0.55).setBlendMode(ADD);
+    this.add(this.auraCore);
+    this.sendToBack(this.auraCore);
+    this.sendToBack(this.aura);
+    this.sendToBack(this.shadow);
+    sc.tweens.add({ targets: this.auraCore, alpha: 0.85, scale: 1.3, duration: 700,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut', delay: 200 });
   }
 
   // ---------- HP 강화/회복 (Task #7) ----------
@@ -1981,15 +2055,33 @@ class MagicManager {
   // ---- [진화] 인페르노: 바닥 지속 화염 장판 ----
   _spawnGroundFire(x, y, gf, mods) {
     const R = gf.radius * ((mods && mods.radiusMul) || 1);
-    const sc = this.scene;
-    const circle = sc.add.circle(x, y + 24, R, 0xff5a2b, 0.22).setDepth(6);
-    const ring = sc.add.circle(x, y + 24, R, 0xffb04a, 0).setStrokeStyle(3, 0xffb04a, 0.5).setDepth(6);
-    if (sc.worldRoot) { sc.worldRoot.add(circle); sc.worldRoot.add(ring); }
-    sc.tweens.add({ targets: circle, alpha: 0.10, duration: 500, yoyo: true, repeat: -1 });
-    const zone = { x, y: y + 24, r: R, dps: gf.dps * (((GameState.run && GameState.run.stats.damageMul) || 1)) * ((mods && mods.dmgMul) || 1), life: gf.duration, tick: 0, circle, ring };
+    const sc = this.scene, ADD = Phaser.BlendModes.ADD;
+    const gy = y + 24;
+    // 3겹 화염 원 (안쪽 밝음)
+    const outer = sc.add.circle(x, gy, R, 0xff5a2b, 0.22).setDepth(6);
+    const mid = sc.add.circle(x, gy, R * 0.7, 0xff8a3d, 0.28).setBlendMode(ADD).setDepth(6);
+    const inner = sc.add.circle(x, gy, R * 0.4, 0xffd23f, 0.30).setBlendMode(ADD).setDepth(6);
+    if (sc.worldRoot) { sc.worldRoot.add(outer); sc.worldRoot.add(mid); sc.worldRoot.add(inner); }
+    // 불꽃 일렁임
+    sc.tweens.add({ targets: [mid, inner], scaleX: 1.12, scaleY: 0.9, duration: 240, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    sc.tweens.add({ targets: outer, alpha: 0.12, duration: 400, yoyo: true, repeat: -1 });
+
+    // 바닥에서 피어오르는 불꽃 파티클 (장판 지속 동안 계속)
+    const flame = sc.add.particles(0, 0, 'px', {
+      x: { min: x - R * 0.8, max: x + R * 0.8 }, y: gy,
+      speedY: { min: -40, max: -90 }, speedX: { min: -12, max: 12 },
+      scale: { start: 3, end: 0 }, alpha: { start: 0.9, end: 0 },
+      lifespan: { min: 350, max: 650 }, frequency: 40,
+      tint: [0xffd23f, 0xff8a3d, 0xff5a2b], blendMode: 'ADD',
+    }).setDepth(7);
+    if (sc.worldRoot) sc.worldRoot.add(flame);
+
+    const zone = {
+      x, y: gy, r: R,
+      dps: gf.dps * (((GameState.run && GameState.run.stats.damageMul) || 1)) * ((mods && mods.dmgMul) || 1),
+      life: gf.duration, tick: 0, circle: outer, extra: [mid, inner, flame],
+    };
     this.zones.push(zone);
-    // 파티클 불씨
-    if (sc.fxEmitters && sc.fxEmitters.fireball) sc.fxEmitters.fireball.emitParticleAt(x, y + 24, 8);
   }
 
   // ---- [진화] 빙하기: 명중 지점 광역 빙결 폭발(피해 + 정지) ----
@@ -2062,7 +2154,13 @@ class MagicManager {
       }
       if (z.life <= 0) {
         this.scene.tweens.killTweensOf(z.circle);
-        z.circle.destroy(); z.ring.destroy();
+        if (z.circle) z.circle.destroy();
+        if (z.extra) for (const o of z.extra) {
+          this.scene.tweens.killTweensOf(o);
+          if (o.stop) o.stop();      // 파티클 이미터 방출 중지
+          this.scene.time.delayedCall(700, () => { if (o.destroy) o.destroy(); });
+        }
+        if (z.ring) z.ring.destroy();
       }
     }
     this.zones = this.zones.filter(z => z.life > 0);
@@ -2436,13 +2534,27 @@ class SkillManager {
 
   pickThree() {
     const pool = this.available();
-    const picks = Phaser.Utils.Array.Shuffle([...pool]).slice(0, 3);
-    // 습득 가능한 마법이 있으면 최소 1장은 습득 카드가 뜨도록 (성장 체감)
-    const learnable = pool.filter(u => u.learn);
-    if (learnable.length && !picks.some(u => u.learn)) {
-      picks[picks.length - 1] = Phaser.Utils.Array.GetRandom(learnable);
-    }
-    return picks;
+    if (pool.length <= 3) return Phaser.Utils.Array.Shuffle([...pool]);
+
+    const picks = [];
+    const remaining = [...pool];
+    const take = (u) => { picks.push(u); remaining.splice(remaining.indexOf(u), 1); };
+
+    // 1) 현재 선택(활성) 마법의 연마 카드를 높은 확률로 포함 → 진화까지 키우기 쉽게
+    const forgeMap = { magicMissile: 'm_missile', fireball: 'm_fire', iceSpear: 'm_ice', chainLightning: 'm_bolt' };
+    const activeKey = this.scene.player && this.scene.player.magicBook.active.data.__key;
+    const activeForge = activeKey && forgeMap[activeKey] && remaining.find(u => u.id === forgeMap[activeKey]);
+    if (activeForge && Math.random() < 0.78) take(activeForge);
+
+    // 2) 아직 없는 마법(습득) 최소 1장 (성장 체감)
+    const learnable = remaining.filter(u => u.learn);
+    if (learnable.length && picks.length < 3) take(Phaser.Utils.Array.GetRandom(learnable));
+
+    // 3) 나머지 무작위 채움
+    const shuffled = Phaser.Utils.Array.Shuffle(remaining);
+    while (picks.length < 3 && shuffled.length) picks.push(shuffled.shift());
+
+    return Phaser.Utils.Array.Shuffle(picks);
   }
 
   // 선택 적용. 반환: { level, awakened } — UI 연출용
@@ -2553,14 +2665,15 @@ class AttackButton {
     this.cb = callbacks;
     this.pointerId = null;
     this.aiming = false;
+    this.manualAim = false;
     this.dir = null;
     this.startX = 0; this.startY = 0;
     this.t0 = 0;
     this.charge = 0;             // 0~1
 
     this.HOLD_MS = 180;          // 이 시간 넘겨 누르면 조준/차지 모드
-    this.DRAG_PX = 22;           // 탭 허용 흔들림(이내면 탭). 오판정 방지 위해 넉넉히
-    this.AIM_DEAD = 16;
+    this.DRAG_PX = 40;           // 이만큼 확실히 끌어야 "수동 조준"으로 전환 (오판정 방지)
+    this.AIM_DEAD = 48;          // 락온 유지 반경 — 이 안에서 손이 흔들려도 자동 락온 유지
     this.CHARGE_MS = 650;        // 완충까지 시간
 
     this.BOTTOM_MARGIN = 150;    // 홈 인디케이터/브라우저 하단 여백 확보
@@ -2585,6 +2698,7 @@ class AttackButton {
       this.startX = p.x; this.startY = p.y;
       this.t0 = scene.time.now;
       this.charge = 0;
+      this.manualAim = false;
       this.root.setScale(0.9);
     });
 
@@ -2592,11 +2706,15 @@ class AttackButton {
       if (p.id !== this.pointerId) return;
       const dx = p.x - this.startX, dy = p.y - this.startY;
       const dist = Math.hypot(dx, dy);
-      if (!this.aiming && dist > this.DRAG_PX) this.aiming = true;
-      if (this.aiming) {
-        this.dir = dist > this.AIM_DEAD ? { x: dx / dist, y: dy / dist } : null;
-        this.cb.onAimUpdate(this.dir);
+      // 확실한 드래그(AIM_DEAD 초과)만 수동 조준. 그 이내면 자동 락온 유지(dir=null).
+      if (dist > this.AIM_DEAD) {
+        this.aiming = true;
+        this.manualAim = true;
+        this.dir = { x: dx / dist, y: dy / dist };
+      } else if (!this.manualAim) {
+        this.dir = null;           // 아직 락온 유지
       }
+      if (this.aiming) this.cb.onAimUpdate(this.dir);
     });
 
     const release = (p) => {
@@ -2619,6 +2737,7 @@ class AttackButton {
       }
       this.pointerId = null;
       this.aiming = false;
+      this.manualAim = false;
       this.dir = null;
       this.charge = 0;
     };
@@ -2656,9 +2775,11 @@ class AttackButton {
 
 // ===== js/ui/MagicSelector.js =====
 // ============================================================
-// MagicSelector — 마법 전환 UI [Task #7: 습득제 반영]
-// 보유한 마법만 하단 아이콘으로 표시. 습득 시 rebuild()로 재구성.
-// uiObjects: UI 카메라 등록용(메인 카메라가 무시하도록 GameScene이 사용).
+// MagicSelector — 하단 장착 마법 바 [Task #8: MP 막대 게이지]
+//  · 선택 = 밝은 원 테두리 + ▲ 포인터 (원형)
+//  · MP  = 아이콘 아래 가로 막대 게이지 (선택 표시와 형태 구분)
+//  · 연마 레벨 점 / 진화 시 금테+★
+//  · MP 부족하면 아이콘 어둡게 → 원소 순환 유도
 // ============================================================
 class MagicSelector {
   constructor(scene, magicBook, onChange) {
@@ -2669,54 +2790,116 @@ class MagicSelector {
       magicMissile: 'missile', fireball: 'fireball', iceSpear: 'icespear', chainLightning: 'bolt',
       arcaneBarrage: 'missile', inferno: 'fireball', glacialAge: 'icespear', stormCloud: 'bolt',
     };
+    this.elemColor = { '무': 0x7ee8ff, '화': 0xff6b2b, '수': 0x8fe3ff, '뇌': 0xfff27a };
+    this.forgeId = { magicMissile: 'm_missile', fireball: 'm_fire', iceSpear: 'm_ice', chainLightning: 'm_bolt' };
     this.buttons = [];
     this.uiObjects = [];
     this.build();
+  }
+
+  _isEvolved(key) { const d = MagicData[key]; return !!(d && d.evolvedFrom); }
+  _forgeLevel(key) {
+    const d = MagicData[key];
+    if (d && d.evolvedFrom) return 3;
+    const fid = this.forgeId[key];
+    return (fid && GameState.run && GameState.run.upgradeLevels[fid]) || 0;
   }
 
   build() {
     const scene = this.scene;
     const keys = this.book.keys;
     const n = keys.length;
-    const gap = 64;
-    const startX = scene.scale.width / 2 - (gap * (n - 1)) / 2;
-    const y = scene.scale.height - 72;   // 홈 인디케이터 여백 확보 (was -44)
+    const gap = 70;
+    const cx = scene.scale.width / 2;
+    const y = scene.scale.height - 74;
+    const startX = cx - (gap * (n - 1)) / 2;
+
+    // 배경 패널 (글자 없음)
+    const panelW = Math.max(gap * n + 20, 190), panelH = 96;
+    this.panel = scene.add.graphics().setScrollFactor(0).setDepth(96);
+    this._drawPanel(cx, y, panelW, panelH);
+    this.uiObjects.push(this.panel);
+    this._panelDim = { panelW, panelH };
 
     keys.forEach((key, i) => {
       const x = startX + i * gap;
+      const evolved = this._isEvolved(key);
       const cont = scene.add.container(x, y).setScrollFactor(0).setDepth(97);
-      const bg = scene.add.circle(0, 0, 26, 0x2a1f45, 0.85).setStrokeStyle(2, 0x6f5aa8, 0.6);
-      const icon = scene.add.image(0, 0, this.icons[key]).setScale(2.4);
-      const num = scene.add.text(0, 20, String(i + 1), {
-        fontFamily: 'monospace', fontSize: '10px', color: '#8f83b5',
-      }).setOrigin(0.5).setResolution(2);
-      cont.add([bg, icon, num]);
 
-      const zone = scene.add.circle(x, y, 30, 0xffffff, 0.001)
+      // 선택 표시는 원 테두리 + 확대로 충분 (별도 포인터 없음)
+      const bg = scene.add.circle(0, -4, 25, 0x2a1f45, 0.95)
+        .setStrokeStyle(evolved ? 3 : 2, evolved ? 0xffd23f : 0x6f5aa8, evolved ? 1 : 0.55);
+      const icon = scene.add.image(0, -4, this.icons[key]).setScale(2.4);
+      const mpBar = scene.add.graphics();     // 가로 MP 막대 (매 프레임)
+      const pipG = scene.add.graphics();      // 연마 레벨 점
+      cont.add([bg, icon, mpBar, pipG]);
+
+      if (evolved) {
+        const star = scene.add.text(18, -20, '★', { fontFamily: 'monospace', fontSize: '13px', color: '#ffd23f' })
+          .setOrigin(0.5).setResolution(2);
+        cont.add(star);
+      }
+
+      const zone = scene.add.circle(x, y, 32, 0xffffff, 0.001)
         .setScrollFactor(0).setDepth(98).setInteractive();
-      zone.on('pointerdown', (p) => {
-        if (p.event) p.event.uiHandled = true;
-        this.select(i);
-      });
+      zone.on('pointerdown', (p) => { if (p.event) p.event.uiHandled = true; this.select(i); });
 
-      this.buttons.push({ cont, bg, icon, key });
+      this.buttons.push({ cont, bg, icon, mpBar, pipG, key, evolved });
       this.uiObjects.push(cont, zone);
     });
 
-    // 활성 유지 (재구성 시 현재 활성 마법으로)
     const activeKey = this.book.active.data.__key;
-    const idx = Math.max(0, keys.indexOf(activeKey));
-    this.select(idx, true);
+    this.select(Math.max(0, keys.indexOf(activeKey)), true);
+    this.refreshPips();
   }
 
-  // 마법 습득 후 재구성 (등장 연출: 새 아이콘이 톡 튀어나옴)
+  _drawPanel(cx, y, panelW, panelH) {
+    this.panel.clear();
+    this.panel.fillStyle(0x1a1230, 0.68).fillRoundedRect(cx - panelW / 2, y - panelH / 2 - 2, panelW, panelH, 16);
+    this.panel.lineStyle(2, 0x6f5aa8, 0.45).strokeRoundedRect(cx - panelW / 2, y - panelH / 2 - 2, panelW, panelH, 16);
+  }
+
+  refreshPips() {
+    this.buttons.forEach((b) => {
+      const g = b.pipG; g.clear();
+      const lv = this._forgeLevel(b.key);
+      const maxPips = 3, pw = 8, totalW = (maxPips - 1) * pw;
+      for (let p = 0; p < maxPips; p++) {
+        const px = -totalW / 2 + p * pw, py = 30;
+        if (b.evolved) g.fillStyle(0xffd23f, 1).fillCircle(px, py, 2.6);
+        else if (p < lv) g.fillStyle(0x6fdc8c, 1).fillCircle(px, py, 2.6);
+        else g.lineStyle(1, 0x8f83b5, 0.7).strokeCircle(px, py, 2.3);
+      }
+    });
+  }
+
+  // 매 프레임 MP 막대 갱신
+  update() {
+    for (let i = 0; i < this.buttons.length; i++) {
+      const b = this.buttons[i];
+      const m = this.book.magics[i];
+      if (!m) continue;
+      const g = b.mpBar; g.clear();
+      const ratio = Math.max(0, Math.min(1, m.mpRatio));
+      const col = this.elemColor[m.data.element] || 0x9fe0ff;
+      const bw = 42, bh = 5, bx = -bw / 2, by = 17;
+      // 배경
+      g.fillStyle(0x140e26, 0.9).fillRoundedRect(bx - 1, by - 1, bw + 2, bh + 2, 3);
+      // 채움 (MP 부족하면 붉게)
+      const afford = m.canAfford;
+      g.fillStyle(afford ? col : 0xff6b6b, 1).fillRoundedRect(bx, by, bw * ratio, bh, 2.5);
+      // cost 눈금 (여기까지 차야 시전 가능)
+      const need = m.cost / m.maxMp;
+      g.fillStyle(0xffffff, 0.6).fillRect(bx + bw * need, by - 1, 1, bh + 2);
+      b.icon.setAlpha(afford ? (b._active ? 1 : 0.82) : 0.4);
+    }
+  }
+
   rebuild() {
     for (const o of this.uiObjects) if (o && o.destroy) o.destroy();
-    this.buttons = [];
-    this.uiObjects = [];
+    this.buttons = []; this.uiObjects = [];
     this.build();
     if (this.scene.registerUI) this.uiObjects.forEach(o => this.scene.registerUI(o));
-    // 새로 습득한(마지막) 아이콘 팝
     const last = this.buttons[this.buttons.length - 1];
     if (last) {
       last.cont.setScale(0.1);
@@ -2724,21 +2907,18 @@ class MagicSelector {
     }
   }
 
-  // 화면 크기 변동 시 버튼 재배치 (재구성 없이 위치만 이동)
   reposition(w, h) {
-    const n = this.buttons.length;
-    const gap = 64;
-    const startX = w / 2 - (gap * (n - 1)) / 2;
-    const y = h - 72;
-    this.buttons.forEach((b, i) => {
-      const x = startX + i * gap;
-      b.cont.setPosition(x, y);
-    });
-    // zone은 uiObjects에 cont와 교차 저장됨: [cont0, zone0, cont1, zone1, ...]
-    for (let i = 0; i < this.buttons.length; i++) {
-      const x = startX + i * gap;
-      const zone = this.uiObjects[i * 2 + 1];
+    const n = this.buttons.length, gap = 70;
+    const cx = w / 2, y = h - 74, startX = cx - (gap * (n - 1)) / 2;
+    const { panelW, panelH } = this._panelDim;
+    if (this.panel) this._drawPanel(cx, y, panelW, panelH);
+    let bi = 0;
+    for (let k = 1; k < this.uiObjects.length; k += 2) {
+      const cont = this.uiObjects[k], zone = this.uiObjects[k + 1];
+      const x = startX + bi * gap;
+      if (cont && cont.setPosition) cont.setPosition(x, y);
       if (zone && zone.setPosition) zone.setPosition(x, y);
+      bi++;
     }
   }
 
@@ -2746,10 +2926,11 @@ class MagicSelector {
     this.book.setActive(i);
     this.buttons.forEach((b, idx) => {
       const on = idx === i;
-      b.bg.setStrokeStyle(on ? 3 : 2, on ? 0xffe9a8 : 0x6f5aa8, on ? 1 : 0.6);
-      b.bg.setFillStyle(on ? 0x3a2a5a : 0x2a1f45, on ? 0.95 : 0.85);
-      b.cont.setScale(on ? 1.15 : 1);
-      b.icon.setAlpha(on ? 1 : 0.7);
+      b._active = on;
+      const col = on ? 0xffe9a8 : (b.evolved ? 0xffd23f : 0x6f5aa8);
+      b.bg.setStrokeStyle(on ? 4 : (b.evolved ? 3 : 2), col, (on || b.evolved) ? 1 : 0.55);
+      b.bg.setFillStyle(on ? 0x46356e : 0x2a1f45, on ? 1 : 0.95);
+      b.cont.setScale(on ? 1.18 : 1);
     });
     if (!silent && this.onChange) this.onChange(this.book.active);
   }
@@ -3767,6 +3948,14 @@ class GameScene extends Phaser.Scene {
     this.hud.announce('WAVE CLEAR', '', 0x6fdc8c);
     SoundManager.waveClear();
 
+    // 웨이브 클리어 소량 회복 (최대 HP의 15%, 최소 3)
+    const healAmt = Math.max(3, Math.round(this.player.effectiveMaxHp() * 0.15));
+    if (this.player.hp < this.player.effectiveMaxHp()) {
+      this.player.healBy(healAmt);
+      this.hud.setHp(this.player.hp, this.player.effectiveMaxHp());
+      this.hud.toast(`+${healAmt} 회복`);
+    }
+
     // 마지막 일반 웨이브(9) 다음은 보스 → 강화 선택 후 보스전
     this.time.delayedCall(WaveData.clearDelay * 1000, () => this._showUpgrade());
   }
@@ -3806,7 +3995,9 @@ class GameScene extends Phaser.Scene {
           this.magicSelector.rebuild();
           this.player.magicBook.setActiveByKey(evoKey);
           this.magicSelector.select(this.player.magicBook.activeIndex, true);
+          this.player.showEvolveAura();
           this.hud.announce('★ 진화 ★', picked.evolution.name, 0xffd23f);
+          this.hud.toast(picked.evolution.name + ' 진화! 공격이 강해졌다');
           this.gameFeel.flash(0xffd23f, 140);
           this.gameFeel.shake(0.006, 240);
           SoundManager.victory && SoundManager.victory();
@@ -3816,7 +4007,16 @@ class GameScene extends Phaser.Scene {
         this.gameFeel.flash(0xffd23f, 120);
         this.gameFeel.shake(0.005, 200);
       }
+      // 연마 레벨 점 갱신 (레벨업 즉시 반영)
+      if (this.magicSelector) this.magicSelector.refreshPips();
       this._afterUpgrade();
+  }
+
+  // MP 부족 시 원소 전환 힌트 (웨이브당 1회, 과도한 반복 방지)
+  _hintSwitch() {
+    if (this._hintWave === this.waveManager.wave) return;
+    this._hintWave = this.waveManager.wave;
+    this.hud.toast('MP 부족 — 다른 원소로 전환!');
   }
 
   _afterUpgrade() {
@@ -3937,6 +4137,11 @@ class GameScene extends Phaser.Scene {
     const dt = Math.min(deltaMs / 1000, 1 / 20);
     this.fpsText.setText(`${Math.round(this.game.loop.actualFps)} fps`);
 
+    // MP 게이지 표시 갱신 (MP 회복 자체는 Player.update의 magicBook.update가 담당)
+    // 차지샷 충전 중에는 활성 마법 회복 느림, 안 쓰는 마법은 빠름(MagicBook.update)
+    this.player.magicBook.charging = (this.phase === Phase.FIGHTING && this.attackButton.aiming);
+    if (this.magicSelector) this.magicSelector.update();
+
     switch (this.phase) {
       case Phase.READY:
       case Phase.FIGHTING:
@@ -3949,6 +4154,8 @@ class GameScene extends Phaser.Scene {
             const px = this.player.x, py = this.player.y - 26;
             const target = this.enemyManager.nearest(px, py, 700);
             if (target) this._fire(null, 1, false);
+          } else if (this.phase === Phase.FIGHTING && !magic.canAfford) {
+            this._hintSwitch();
           }
         } else {
           this._drawAim(this.attackButton.dir);
