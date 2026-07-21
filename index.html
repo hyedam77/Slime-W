@@ -1,0 +1,3825 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>슬라임 마법사</title>
+  <!-- iPhone 최적화: 확대 금지, 전체화면 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="슬라임 마법사">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Phaser 3: 여러 CDN 순차 시도. crossorigin으로 오류 메시지 노출(디버그) -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js" crossorigin="anonymous"></script>
+  <script>window.Phaser||document.write('<script src="https://unpkg.com/phaser@3.80.1/dist/phaser.min.js" crossorigin="anonymous"><\/script>')</script>
+  <script>window.Phaser||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js" crossorigin="anonymous"><\/script>')</script>
+</head>
+<body>
+  <div id="game-container">
+    <div id="loading"><div class="spark"></div><div>슬라임 마법사 불러오는 중…</div></div>
+  </div>
+  <div id="errbar"></div>
+
+  <script>
+  // (1) 보이는 뷰포트 높이에 맞춰 게임 영역 크기 조정 (인앱 브라우저/콘솔로 하단 잘림 방지)
+  (function () {
+    function fit() {
+      var vv = window.visualViewport;
+      var hgt = (vv && vv.height) || window.innerHeight || document.documentElement.clientHeight;
+      var c = document.getElementById('game-container');
+      if (c) c.style.height = Math.round(hgt) + 'px';
+    }
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', fit);
+      window.visualViewport.addEventListener('scroll', fit);
+    }
+    window.addEventListener('resize', fit);
+    window.addEventListener('orientationchange', function(){ setTimeout(fit, 200); });
+    fit();
+    window.__fitViewport = fit;
+  })();
+
+  // (2) 실행 오류를 화면 하단에 표시 (디버그)
+  (function () {
+    var last = '', count = 0;
+    function show(txt) {
+      var b = document.getElementById('errbar');
+      if (!b) return;
+      if (txt === last) { count++; } else { last = txt; count = 1; }
+      b.style.display = 'block';
+      b.textContent = txt + (count > 1 ? '  (×' + count + ')' : '');
+    }
+    window.__showErr = show;
+    window.addEventListener('error', function (e) {
+      var m = (e.error && e.error.stack) || e.message || 'error';
+      show('⚠️ ' + m + (e.filename ? '\n@ ' + e.filename.split('/').pop() + ':' + e.lineno + ':' + e.colno : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      show('⚠️ (promise) ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+    });
+    // console.error도 가로채 상세 메시지 노출 (게임 내부 try/catch가 잡은 진짜 오류가 여기로 옴)
+    var _ce = console.error;
+    console.error = function () {
+      try {
+        var parts = [];
+        for (var i = 0; i < arguments.length; i++) {
+          var a = arguments[i];
+          parts.push(a && a.stack ? a.stack : (a && a.message ? a.message : String(a)));
+        }
+        show('🐞 ' + parts.join(' '));
+      } catch (_) {}
+      return _ce.apply(console, arguments);
+    };
+  })();
+
+  // (3) 엔진 로드 실패(모든 CDN 차단) 시 안내
+  if (!window.Phaser) {
+    var el = document.getElementById('loading');
+    if (el) el.innerHTML =
+      '<div style="font-size:34px">🔌</div>' +
+      '<div>게임 엔진을 불러오지 못했어요.<br>인터넷에 연결한 뒤,<br><b>Safari</b> 또는 <b>Chrome</b>에서 열어주세요.<br><span style="opacity:.6;font-size:13px">(카카오톡 등 앱 내 브라우저는 일부 차단될 수 있어요)</span></div>';
+  }
+
+  // (4) 감시: 일정 시간 내 게임이 시작되지 않으면(카카오톡 파일뷰어 등) 안내 표시
+  setTimeout(function () {
+    if (window.__gameStarted) return;
+    var el = document.getElementById('loading');
+    if (!el) return;
+    el.innerHTML =
+      '<div style="font-size:34px">📂</div>' +
+      '<div>이 화면에서는 게임이 실행되지 않아요.<br>오른쪽 위 <b>···</b> 또는 <b>공유</b> 버튼을 눌러<br><b>Safari</b>(또는 Chrome)로 열어주세요.<br><span style="opacity:.6;font-size:13px">카카오톡 파일 미리보기는 게임 실행을 지원하지 않을 수 있어요.</span></div>';
+  }, 3500);
+  </script>
+
+  <!-- 로드 순서 중요: 데이터 → 코어 → 엔티티 → 매니저 → UI → 씬 → main -->
+  <script>
+    // PWA 서비스워커 등록 (배포 시 오프라인 캐시)
+    /* sw disabled in test build */
+    }
+  </script>
+  <script>
+
+// ===== js/data/BalanceData.js =====
+// ============================================================
+// BalanceData — 전역 밸런스 수치 (GPT 밸런스 조정 지점)
+// 개별 엔티티 수치는 PlayerData / EnemyData / MagicData 참조
+// ============================================================
+const BalanceData = {
+  version: '0.7.7',        // 화면/파일명 버전 표기 (빌드 구분용)
+  field: {
+    width: 1200,           // 전투 필드 크기 (논리 픽셀)
+    height: 1600,
+  },
+  cameraZoom: 0.7,         // 메인 카메라 줌 (작을수록 시야 넓음). UI는 별도 카메라라 안 줄어듦
+  difficulty: {
+    hpGrowthPerWave: 0.15,   // 웨이브당 적 HP 증가율
+    countGrowthPerWave: 0.2, // 웨이브당 적 수 증가율
+  },
+  run: {
+    wavesPerStage: 5,        // 스테이지당 웨이브 수 (마지막은 보스)
+  },
+};
+
+
+// ===== js/data/PlayerData.js =====
+// ============================================================
+// PlayerData — 플레이어(슬라임 마법사) 기본 스탯 [GPT 요청 ④]
+// feel: 이동 손맛 튜닝 파라미터 (Task #3) — 여기 수치만 바꿔 감각 조정
+// ============================================================
+const PlayerData = {
+  maxHp: 30,          // 체력이 매우 낮은 컨셉
+  moveSpeed: 240,     // 최대 이동 속도 px/sec
+  bodyRadius: 14,     // 충돌 반경 (전투 단계에서 사용)
+  baseCooldownMul: 1.0,
+  // 레벨업 성장 훅 (Task #7 성장 시스템에서 사용):
+  //   레벨업 시 GameState.run.stats.cooldownMul *= (1 - levelHastePerLv) 로 연사 강화
+  levelHastePerLv: 0.03,
+  invincibleTime: 1.0,  // 피격 후 무적 (피하며 싸울 여유)
+
+  feel: {
+    accelTime: 0.07,      // 입력 → 최대속도 도달 시간(초). 작을수록 즉각 반응
+    decelTime: 0.09,      // 놓았을 때 정지까지 시간(초)
+    wobbleFreq: 5.5,      // 출렁임 주기(Hz) — 속도와 무관하게 고정
+    wobbleAmp: 0.055,     // 출렁임 크기. 고속에서는 자동 감쇠됨
+    stretchAmp: 0.24,     // 진행방향 스트레치 — 고속 이동의 주된 표현
+    startSquash: 0.86,    // 출발 순간 압축 scaleY
+    stopBounceTime: 420,  // 정지 바운스(젤리 복원) 시간 ms
+    hopAmp: 2.5,          // 콩콩 높이(px). 고속에서 자동 감쇠
+    shearAmp: 13,         // 관성 전단: 최고 속도에서 몸 윗부분이 뒤로 처지는 거리(px)
+    shearFreq: 14,        // 전단 스프링 강성(rad/s) — 클수록 빨리 따라옴
+    shearDamp: 0.35,      // 전단 감쇠비 — 낮을수록 정지 시 크게 출렁이며 복원
+    trailAmp: 6,          // 몸 전체가 뒤로 끌리는 거리(px)
+    blinkMin: 1.6, blinkMax: 4.0, // 블링크 간격(초)
+  },
+};
+
+
+// ===== js/data/MagicData.js =====
+// ============================================================
+// MagicData — 마법 정의 [데이터 주도]
+//
+// 역할 분담 (각 마법의 뚜렷한 정체성):
+//   매직 미사일  : 단일 폭딜   — 한 대상에게 최고 DPS (보스/정예전)
+//   파이어볼     : 광역 폭발   — 뭉친 적, 느리지만 넓은 범위
+//   아이스 스피어: 관통 유틸   — 일렬 적 관통 + 강력 둔화 (딜은 중간)
+//   체인 라이트닝: 산개 대응   — 흩어진 적에게 연쇄
+//
+// 차지샷: 각 마법의 "강점"을 증폭하는 방향
+//   미사일→피해 대폭 / 파이어볼→범위·위력 / 아이스→관통·둔화 / 체인→연쇄수
+// ============================================================
+const MagicData = {
+  // 1) 매직 미사일 — 단일 폭딜 (시작 마법). 빠른 연사 + 높은 단일 DPS
+  magicMissile: {
+    name: '매직 미사일',
+    cooldown: 0.42,
+    projectile: {
+      texture: 'missile', speed: 820, radius: 7, damage: 8,     // 단일 최고 뎀
+      lifetime: 1.0, scale: 3, spin: true, tint: 0x7ee8ff,
+    },
+    charge: { dmgMul: 2.6, radiusMul: 1.5 },                    // 차지: 순수 폭딜
+    feel: { sndFire: 'shoot', sndHit: 'hit', hitParticles: 6, tint: [0x7ee8ff, 0xd9ffe3] },
+  },
+
+  // 2) 파이어볼 — 광역 폭발. 느린 탄속, 넓은 범위. (독주 방지 위해 하향)
+  fireball: {
+    name: '파이어볼',
+    cooldown: 1.25,                                            // 1.0 → 1.25 (독주 억제)
+    projectile: {
+      texture: 'fireball', speed: 300, radius: 11, damage: 3,   // 직격 딜 낮음
+      lifetime: 2.2, scale: 3.4, spin: true, tint: 0xff6b2b,
+    },
+    explosion: { radius: 82, damage: 6, color: 0xff8a3d },      // R100/8 → R82/6
+    charge: { dmgMul: 1.5, radiusMul: 1.5 },                    // 차지 범위 1.7 → 1.5
+    feel: { sndFire: 'fireCast', sndHit: 'fireHit', hitParticles: 0, tint: [0xff6b2b, 0xffd23f] },
+  },
+
+  // 3) 아이스 스피어 — 관통 유틸. 일렬 관통 + 강력 둔화 (딜 소폭 상향)
+  iceSpear: {
+    name: '아이스 스피어',
+    cooldown: 0.72,
+    projectile: {
+      texture: 'icespear', speed: 950, radius: 12, damage: 6,   // 5 → 6
+      lifetime: 1.1, pierce: 4, spin: false, tint: 0x8fe3ff,
+    },
+    slow: { factor: 0.35, duration: 2.8 },                      // 둔화 강력(65%)
+    charge: { dmgMul: 1.8, pierceAdd: 4, widthMul: 2.2 },
+    feel: { sndFire: 'iceCast', sndHit: 'iceHit', hitParticles: 12, tint: [0x8fe3ff, 0xe8faff] },
+  },
+
+  // 4) 체인 라이트닝 — 산개 대응. 흩어진 적 연쇄 (딜 소폭 상향)
+  chainLightning: {
+    name: '체인 라이트닝',
+    cooldown: 0.82,
+    projectile: {
+      texture: 'bolt', speed: 850, radius: 8, damage: 6,        // 5 → 6
+      lifetime: 0.9, spin: true, tint: 0xfff27a,
+    },
+    chain: { jumps: 4, range: 250, falloff: 0.82 },
+    charge: { dmgMul: 1.5, jumpsAdd: 4, rangeMul: 1.4 },
+    feel: { sndFire: 'boltCast', sndHit: 'boltHit', hitParticles: 7, tint: [0xfff27a, 0xb98cff] },
+  },
+};
+
+const MagicOrder = ['magicMissile', 'fireball', 'iceSpear', 'chainLightning'];
+for (const k of Object.keys(MagicData)) MagicData[k].__key = k;
+
+
+// ===== js/data/EnemyData.js =====
+// ============================================================
+// EnemyData — 적 정의 [상속: melee / ranged / boss]
+// ============================================================
+const EnemyData = {
+  goblin: {
+    kind: 'melee',
+    hp: 18,             // 미사일 2방 (웨이브 hpMul로 성장: WaveData.mods)
+    speed: 95,          // 플레이어(240)보다 느림 → 피하며 싸우는 재미
+    damage: 4,
+    radius: 16,
+    touchCooldown: 1.1, // 접촉 공격 간격(초)
+    knockback: 180,     // 피격 시 밀려나는 초기 속도
+    scale: 4,
+    color: 0x7cc44f,
+    xp: 3,
+  },
+
+  goblinKing: {
+    kind: 'boss',
+    name: '고블린 킹',
+    hp: 550,
+    speed: 72,          // 평상시 추적은 느림
+    damage: 8,          // 접촉/돌진 공통
+    radius: 34,
+    touchCooldown: 1.2,
+    knockback: 30,      // 넉백 거의 안 밀림 (보스 무게감)
+    scale: 5,
+    xp: 0,
+    // 돌진 패턴
+    dashCd: 4.2,        // 돌진 간격(초)
+    windup: 0.75,       // 예고 시간 (붉게 점멸 — 피할 시간)
+    dashSpeed: 520,
+    dashTime: 0.42,
+    recoverTime: 0.6,
+    // 소환 패턴
+    summonCd: 9,
+    summonCount: 3,
+    summonCap: 8,       // 필드 위 부하 최대치
+  },
+};
+
+
+// ===== js/data/WaveData.js =====
+// ============================================================
+// WaveData — 웨이브 1~10 정의 [Task #7] (GPT 밸런스 조정 지점)
+//
+// pattern (스폰 배치 — 마법 선택의 재미를 만드는 핵심):
+//   scatter : 사방 무작위 산개   → 체인 라이트닝이 유리
+//   ring    : 플레이어 포위      → 위치 선정 압박
+//   cluster : 한 방향에 뭉침     → 파이어볼이 유리
+//   stream  : 한 방향에서 일렬   → 아이스 스피어가 유리
+//   mixed   : cluster/scatter 교차
+//
+// count: 총 스폰 수 / batch: 한 번에 스폰 수 / interval: 배치 간격(초)
+// 마지막 웨이브(10)는 보스전.
+// ============================================================
+const WaveData = {
+  countdown: 3,          // 다음 웨이브 시작 카운트(초)
+  firstSpawnDelay: 1.4,  // 웨이브 배너 후 첫 스폰까지(초)
+  clearDelay: 0.9,       // 전멸 후 강화 선택까지(초)
+  waveClearBonus: 30,    // 점수: 웨이브 번호 × 이 값
+  bossBonus: 500,
+
+  waves: [
+    { count: 5,  batch: 2, interval: 1.00, pattern: 'scatter' }, // 1 몸풀기
+    { count: 7,  batch: 2, interval: 0.90, pattern: 'ring'    }, // 2 포위 맛보기
+    { count: 9,  batch: 3, interval: 0.90, pattern: 'cluster' }, // 3 파이어볼 각
+    { count: 11, batch: 3, interval: 0.85, pattern: 'stream'  }, // 4 아이스 각
+    { count: 13, batch: 3, interval: 0.80, pattern: 'mixed'   }, // 5 중간 고비
+    { count: 15, batch: 4, interval: 0.80, pattern: 'ring'    }, // 6
+    { count: 17, batch: 4, interval: 0.75, pattern: 'cluster' }, // 7
+    { count: 19, batch: 4, interval: 0.70, pattern: 'stream'  }, // 8
+    { count: 22, batch: 5, interval: 0.65, pattern: 'scatter' }, // 9 최대 혼돈
+    { boss: 'goblinKing' },                                      // 10 보스전
+  ],
+
+  // 웨이브별 적 강화 (고블린 기본치에 곱/합산)
+  mods(w) {
+    return {
+      hpMul: 1 + 0.16 * (w - 1),          // 10웨이브 ≈ ×2.44
+      dmgAdd: Math.floor((w - 1) / 3),    // 3웨이브마다 +1
+      speedAdd: (w - 1) * 3,              // 조금씩 빨라짐
+    };
+  },
+
+  // 스폰 거리 (플레이어 기준)
+  spawnDist: { min: 300, max: 480, safe: 260 },
+};
+
+
+// ===== js/data/UpgradeData.js =====
+// ============================================================
+// UpgradeData — 강화 목록 v2 [Task #7: 레벨 + 진화 수용 구조]
+//
+// 구조 (진화를 수용하는 데이터 설계):
+//   maxLevel  : 같은 강화를 여러 번 선택 가능 (레벨 누적)
+//   apply(run): 선택 시 1레벨만큼 적용. run = GameState.run
+//   evolution : 최고 레벨 도달 시 "각성" —
+//               지금 버전: bonus(run)로 즉시 보너스 + pendingEvolutions에 기록
+//               다음 버전: pendingEvolutions를 읽어 진짜 진화 마법으로 교체
+//               (예: fireball ×3 → 'inferno' 해금)
+//
+// 마법별 강화는 run.stats.magicMods[key]를 수정한다:
+//   { dmgMul, cdMul, radiusMul, pierceAdd, jumpsAdd }
+//   → MagicManager/Projectile/GameScene이 시전 시 읽는다.
+//
+// icon: { type:'rune', text, color } 또는 { type:'magic', tex }
+// ============================================================
+const UpgradeData = {
+  list: [
+    // ---- 공용 스탯 ----
+    {
+      id: 'dmg_up', name: '마력 증폭', maxLevel: 5,
+      icon: { type: 'rune', text: '마', color: 0xff9ec6 },
+      desc: '모든 마법 피해 +15%',
+      apply: (run) => { run.stats.damageMul += 0.15; },
+    },
+    {
+      id: 'haste', name: '신속 시전', maxLevel: 5,
+      icon: { type: 'rune', text: '연', color: 0x7ee8ff },
+      desc: '연사 속도 +10%',
+      apply: (run) => { run.stats.cooldownMul *= 0.90; },
+    },
+    {
+      id: 'spd_up', name: '슬라임 질주', maxLevel: 3,
+      icon: { type: 'rune', text: '속', color: 0x6fdc8c },
+      desc: '이동 속도 +8%',
+      apply: (run) => { run.stats.speedMul += 0.08; },
+    },
+    {
+      id: 'hp_up', name: '말랑한 몸', maxLevel: 3,
+      icon: { type: 'rune', text: '생', color: 0xffcc55 },
+      desc: '최대 체력 +8 · 즉시 8 회복',
+      heal: 8, // GameScene이 선택 직후 회복 처리
+      apply: (run) => { run.stats.bonusHp += 8; },
+    },
+    {
+      id: 'crit_ch', name: '예리한 마력', maxLevel: 4,
+      icon: { type: 'rune', text: '극', color: 0xffd23f },
+      desc: '치명타 확률 +8%',
+      apply: (run) => { run.stats.critChance += 0.08; },
+    },
+    {
+      id: 'crit_dmg', name: '파괴의 일격', maxLevel: 3,
+      icon: { type: 'rune', text: '파', color: 0xff6b2b },
+      desc: '치명타 피해 +30%',
+      apply: (run) => { run.stats.critMul += 0.30; },
+    },
+
+    // ---- 마법 습득 (새 페이지) — 아직 없는 마법을 배운다 ----
+    {
+      id: 'learn_fire', name: '파이어볼 습득', maxLevel: 1, magicKey: 'fireball', learn: true,
+      icon: { type: 'magic', tex: 'fireball' },
+      desc: '새 마법: 뭉친 적을 폭발로 쓸어담는다',
+      apply: () => {},   // 습득은 GameScene에서 magicBook.add 처리
+    },
+    {
+      id: 'learn_ice', name: '아이스 스피어 습득', maxLevel: 1, magicKey: 'iceSpear', learn: true,
+      icon: { type: 'magic', tex: 'icespear' },
+      desc: '새 마법: 일렬로 관통하며 강하게 둔화',
+      apply: () => {},
+    },
+    {
+      id: 'learn_bolt', name: '체인 라이트닝 습득', maxLevel: 1, magicKey: 'chainLightning', learn: true,
+      icon: { type: 'magic', tex: 'bolt' },
+      desc: '새 마법: 흩어진 적에게 번개가 연쇄',
+      apply: () => {},
+    },
+
+    // ---- 마법별 연마 (×3 → 각성) — 보유한 마법만 등장 ----
+    {
+      id: 'm_missile', name: '미사일 연마', maxLevel: 3, magicKey: 'magicMissile',
+      icon: { type: 'magic', tex: 'missile' },
+      desc: '미사일 피해 +25% · 쿨다운 -6%',
+      apply: (run) => {
+        const m = run.stats.magicMods.magicMissile;
+        m.dmgMul += 0.25; m.cdMul *= 0.94;
+      },
+      evolution: {
+        id: 'arcaneBarrage', name: '아케인 폭주',
+        flavor: '미사일이 폭풍처럼 쏟아진다',
+        bonusDesc: '각성: 미사일 쿨다운 -15%',
+        bonus: (run) => { run.stats.magicMods.magicMissile.cdMul *= 0.85; },
+      },
+    },
+    {
+      id: 'm_fire', name: '파이어볼 연마', maxLevel: 3, magicKey: 'fireball',
+      icon: { type: 'magic', tex: 'fireball' },
+      desc: '폭발 반경 +18% · 폭발 피해 +20%',
+      apply: (run) => {
+        const m = run.stats.magicMods.fireball;
+        m.radiusMul += 0.18; m.dmgMul += 0.20;
+      },
+      evolution: {
+        id: 'inferno', name: '인페르노',
+        flavor: '대지가 불타오른다',
+        bonusDesc: '각성: 폭발 반경 +25%',
+        bonus: (run) => { run.stats.magicMods.fireball.radiusMul += 0.25; },
+      },
+    },
+    {
+      id: 'm_ice', name: '아이스 연마', maxLevel: 3, magicKey: 'iceSpear',
+      icon: { type: 'magic', tex: 'icespear' },
+      desc: '아이스 피해 +20% · 관통 +1',
+      apply: (run) => {
+        const m = run.stats.magicMods.iceSpear;
+        m.dmgMul += 0.20; m.pierceAdd += 1;
+      },
+      evolution: {
+        id: 'glacialAge', name: '빙하기',
+        flavor: '모든 것을 꿰뚫고 얼린다',
+        bonusDesc: '각성: 관통 +3',
+        bonus: (run) => { run.stats.magicMods.iceSpear.pierceAdd += 3; },
+      },
+    },
+    {
+      id: 'm_bolt', name: '라이트닝 연마', maxLevel: 3, magicKey: 'chainLightning',
+      icon: { type: 'magic', tex: 'bolt' },
+      desc: '번개 피해 +15% · 연쇄 +1',
+      apply: (run) => {
+        const m = run.stats.magicMods.chainLightning;
+        m.dmgMul += 0.15; m.jumpsAdd += 1;
+      },
+      evolution: {
+        id: 'stormCloud', name: '뇌운',
+        flavor: '하늘이 응답한다',
+        bonusDesc: '각성: 연쇄 +2',
+        bonus: (run) => { run.stats.magicMods.chainLightning.jumpsAdd += 2; },
+      },
+    },
+  ],
+
+  byId(id) { return this.list.find(u => u.id === id); },
+};
+
+
+// ===== js/core/PixelArt.js =====
+// ============================================================
+// PixelArt — 코드 정의 픽셀아트 시스템
+// 그리드 문자열 → 캔버스 텍스처 (자동 외곽선 포함)
+// 외부 이미지 없이 진짜 픽셀아트를 만들고, 수정이 쉬움
+// ============================================================
+const PixelArt = {
+  // 공통 팔레트 (Art Guide 초안: 캐릭터당 6~8색 + 외곽선 1색)
+  PALETTE: {
+    'H': '#7b5bd6', // 모자 보라
+    'h': '#5a3fb0', // 모자 그늘
+    'Y': '#ffd94a', // 별 장식
+    'G': '#6fdc8c', // 슬라임 본체
+    'W': '#d9ffe3', // 하이라이트
+    'd': '#4db56e', // 본체 그늘
+    'E': '#2b2140', // 눈
+    'B': '#ff9ec6', // 볼터치
+    'm': '#2b2140', // 입
+    'g': '#3f8f57', // 풀
+    'f': '#ffe9a8', // 꽃잎
+    'o': '#ff9e5e', // 꽃 중심
+    'C': '#7ee8ff', // 매직 미사일 청록
+    'b': '#a5744a', // 허수아비 나무
+    'r': '#7a5233', // 나무 그늘
+    'K': '#7cc44f', // 고블린 살갗
+    'k': '#5a9636', // 고블린 그늘
+    'T': '#e8d9a0', // 고블린 이빨/뿔
+    'R': '#c0453a', // 고블린 천/눈
+    'F': '#ff6b2b', // 파이어볼 주황
+    'f': '#ffd23f', // 파이어볼 노랑 코어
+    'I': '#8fe3ff', // 아이스 하늘
+    'i': '#e8faff', // 아이스 하이라이트
+    'L': '#fff27a', // 번개 노랑
+    'l': '#b98cff', // 번개 보라
+  },
+  OUTLINE: '#2b2140',
+
+  // ---- 슬라임 마법사 (16x15) ----
+  SLIME_BASE: [
+    '.......HH.......',
+    '......HHHH......',
+    '.....HHYHH......',
+    '.....hHHHHh.....',
+    '...HHHHHHHHHH...',
+    '....GGGGGGGG....',
+    '..GGGGGGGGGGGG..',
+    '..GWWGGGGGGGGG..',
+    '.GGWGGGGGGGGGGG.',
+    '.GGGEEGGGGEEGGG.',
+    '.GGGEEGGGGEEGGG.',
+    '.GGGGGGGGGGGGGG.',
+    '.GGBBGGmmGGBBGG.',
+    '..GGGGGGGGGGGG..',
+    '...dddddddddd...',
+  ],
+  // 눈 감은 프레임 (블링크)
+  SLIME_BLINK: [
+    '.......HH.......',
+    '......HHHH......',
+    '.....HHYHH......',
+    '.....hHHHHh.....',
+    '...HHHHHHHHHH...',
+    '....GGGGGGGG....',
+    '..GGGGGGGGGGGG..',
+    '..GWWGGGGGGGGG..',
+    '.GGWGGGGGGGGGGG.',
+    '.GGGGGGGGGGGGGG.',
+    '.GGGEEGGGGEEGGG.',
+    '.GGGGGGGGGGGGGG.',
+    '.GGBBGGmmGGBBGG.',
+    '..GGGGGGGGGGGG..',
+    '...dddddddddd...',
+  ],
+
+  // ---- 고블린 (14x13) 걷기 프레임 A ----
+  GOBLIN_A: [
+    '..T........T..',
+    '..KK......KK..',
+    '..KKKKKKKKKK..',
+    '.KKKKKKKKKKKK.',
+    '.KRRKKKKKKRRK.',
+    '.KRRKKKKKKRRK.',
+    '.KKKKKKKKKKKK.',
+    '.KKKTTTTTTKKK.',
+    '.kKKKKKKKKKKk.',
+    '..kkKKKKKKkk..',
+    '...kk....kk...',
+    '..kkk....kkk..',
+    '..kk......kk..',
+  ],
+  // ---- 고블린 걷기 프레임 B (다리 반대) ----
+  GOBLIN_B: [
+    '..T........T..',
+    '..KK......KK..',
+    '..KKKKKKKKKK..',
+    '.KKKKKKKKKKKK.',
+    '.KRRKKKKKKRRK.',
+    '.KRRKKKKKKRRK.',
+    '.KKKKKKKKKKKK.',
+    '.KKKTTTTTTKKK.',
+    '.kKKKKKKKKKKk.',
+    '..kkKKKKKKkk..',
+    '...kk....kk...',
+    '...kkk..kkk...',
+    '....kk..kk....',
+  ],
+
+  // ---- 고블린 킹 (18x16) 보스: 왕관 + 붉은 망토 ----
+  GOBLIN_KING: [
+    '...Y..Y..Y..Y.....',
+    '...YYYYYYYYYY.....',
+    '..KKKKKKKKKKKK....',
+    '.KKKKKKKKKKKKKK...',
+    '.KRRKKKKKKKKRRK...',
+    '.KRRKKKKKKKKRRK...',
+    '.KKKKKKKKKKKKKK...',
+    '.KKKTTTTTTTTKKK...',
+    '.KKKKKKKKKKKKKK...',
+    'RRKKKKKKKKKKKKRR..',
+    'RRkKKKKKKKKKKkRR..',
+    '.RkkKKKKKKKKkkR...',
+    '..kkkKKKKKKkkk....',
+    '...kk......kk.....',
+    '..kkk......kkk....',
+    '..kk........kk....',
+  ],
+
+  // ---- 타이틀 전용: 모자 분리 (모자 흔들림 + 눈 깜빡임 독립 연출) ----
+  TITLE_HAT: [
+    '.......HH.......',
+    '......HHHH......',
+    '.....HHYHH......',
+    '.....hHHHHh.....',
+    '...HHHHHHHHHH...',
+  ],
+  // 모자 없는 몸통 (눈 뜸)
+  TITLE_BODY: [
+    '....GGGGGGGG....',
+    '..GGGGGGGGGGGG..',
+    '..GWWGGGGGGGGG..',
+    '.GGWGGGGGGGGGGG.',
+    '.GGGEEGGGGEEGGG.',
+    '.GGGEEGGGGEEGGG.',
+    '.GGGGGGGGGGGGGG.',
+    '.GGBBGGmmGGBBGG.',
+    '..GGGGGGGGGGGG..',
+    '...dddddddddd...',
+  ],
+  // 모자 없는 몸통 (눈 감음)
+  TITLE_BODY_BLINK: [
+    '....GGGGGGGG....',
+    '..GGGGGGGGGGGG..',
+    '..GWWGGGGGGGGG..',
+    '.GGWGGGGGGGGGGG.',
+    '.GGGGGGGGGGGGGG.',
+    '.GGGmmGGGGmmGGG.',
+    '.GGGGGGGGGGGGGG.',
+    '.GGBBGGmmGGBBGG.',
+    '..GGGGGGGGGGGG..',
+    '...dddddddddd...',
+  ],
+
+  // ---- 매직 미사일 (7x7 다이아) ----
+  MISSILE: [
+    '...C...',
+    '..CWC..',
+    '.CWWWC.',
+    'CWWWWWC',
+    '.CWWWC.',
+    '..CWC..',
+    '...C...',
+  ],
+
+  // ---- 파이어볼 (9x9) ----
+  FIREBALL: [
+    '...FFF...',
+    '..FffFF..',
+    '.FffffFF.',
+    'FfffffffF',
+    'FfffiffFF',
+    'FffffffF.',
+    '.FffffF..',
+    '..FFfF...',
+    '...FF....',
+  ],
+  // ---- 아이스 스피어 (11x5 가로 창) ----
+  ICESPEAR: [
+    '..IIiiiIII.',
+    '.IIiiiiiIII',
+    'IiiiiiiiiiI',
+    '.IIiiiiiIII',
+    '..IIiiiIII.',
+  ],
+  // ---- 번개 볼트 (7x7) ----
+  BOLT: [
+    '...LL..',
+    '..LL...',
+    '.LLl...',
+    'LLllLL.',
+    '..lLLL.',
+    '...lLL.',
+    '...LL..',
+  ],
+
+  // ---- 훈련용 허수아비 (12x12) ----
+  DUMMY: [
+    '....YYYY....',
+    '...YYYYYY...',
+    '...YEYYEY...',
+    '...YYYYYY...',
+    '....YYYY....',
+    '.....bb.....',
+    '..bbbbbbbb..',
+    '.....bb.....',
+    '.....bb.....',
+    '.....bb.....',
+    '....rrrr....',
+    '....rrrr....',
+  ],
+
+  // ---- 파티클용 점 (3x3) ----
+  PX: [
+    'WWW',
+    'WWW',
+    'WWW',
+  ],
+
+  // ---- 필드 장식 ----
+  GRASS: [
+    'g.g.g',
+    'gg.gg',
+    '.ggg.',
+  ],
+  FLOWER: [
+    '.f.f.',
+    'f.o.f',
+    '.f.f.',
+    '..g..',
+  ],
+
+  // 그리드 → 텍스처. outline=true면 캐릭터 주변에 1px 외곽선 자동 생성
+  makeTexture(scene, key, grid, outline = true) {
+    if (scene.textures.exists(key)) return;
+    const h = grid.length, w = grid[0].length;
+    const pad = outline ? 1 : 0;
+    const canvas = scene.textures.createCanvas(key, w + pad * 2, h + pad * 2);
+    const ctx = canvas.getContext();
+
+    const filled = (x, y) =>
+      x >= 0 && y >= 0 && x < w && y < h && grid[y][x] !== '.';
+
+    if (outline) {
+      ctx.fillStyle = this.OUTLINE;
+      for (let y = -1; y <= h; y++) for (let x = -1; x <= w; x++) {
+        if (filled(x, y)) continue;
+        if (filled(x + 1, y) || filled(x - 1, y) || filled(x, y + 1) || filled(x, y - 1)) {
+          ctx.fillRect(x + pad, y + pad, 1, 1);
+        }
+      }
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const c = grid[y][x];
+      if (c === '.') continue;
+      ctx.fillStyle = this.PALETTE[c] || '#ff00ff';
+      ctx.fillRect(x + pad, y + pad, 1, 1);
+    }
+    canvas.refresh();
+  },
+
+  // 게임에서 쓰는 텍스처 일괄 생성 (BootScene에서 호출)
+  generateAll(scene) {
+    this.makeTexture(scene, 'slime', this.SLIME_BASE);
+    this.makeTexture(scene, 'slime_blink', this.SLIME_BLINK);
+    this.makeTexture(scene, 'title_hat', this.TITLE_HAT);
+    this.makeTexture(scene, 'title_body', this.TITLE_BODY);
+    this.makeTexture(scene, 'title_body_blink', this.TITLE_BODY_BLINK);
+    this.makeTexture(scene, 'grass', this.GRASS, false);
+    this.makeTexture(scene, 'flower', this.FLOWER, false);
+    this.makeTexture(scene, 'goblin_a', this.GOBLIN_A);
+    this.makeTexture(scene, 'goblin_b', this.GOBLIN_B);
+    this.makeTexture(scene, 'goblin_king', this.GOBLIN_KING);
+    this.makeTexture(scene, 'missile', this.MISSILE);
+    this.makeTexture(scene, 'fireball', this.FIREBALL);
+    this.makeTexture(scene, 'icespear', this.ICESPEAR);
+    this.makeTexture(scene, 'bolt', this.BOLT);
+    this.makeTexture(scene, 'dummy', this.DUMMY);
+    this.makeTexture(scene, 'px', this.PX, false);
+
+    // 스프라이트 텍스처만 NEAREST(픽셀 선명). 텍스트는 전역 LINEAR 유지 → 한글 선명.
+    // (1 = Phaser.Textures.FilterMode.NEAREST)
+    const pixelKeys = ['slime', 'slime_blink', 'title_hat', 'title_body', 'title_body_blink',
+      'grass', 'flower', 'goblin_a', 'goblin_b', 'goblin_king',
+      'missile', 'fireball', 'icespear', 'bolt', 'dummy', 'px'];
+    for (const k of pixelKeys) {
+      const tex = scene.textures.get(k);
+      if (tex && tex.setFilter) tex.setFilter(1);
+    }
+  },
+};
+
+
+// ===== js/core/Phase.js =====
+// 전투 흐름 페이즈 — GameScene이 이 값 하나만 보고 분기한다
+const Phase = Object.freeze({
+  READY: 'ready',
+  FIGHTING: 'fighting',
+  UPGRADING: 'upgrading',
+  BOSS_INTRO: 'bossIntro',
+  CLEARED: 'cleared',
+  GAME_OVER: 'gameOver',
+});
+
+
+// ===== js/core/GameState.js =====
+// ============================================================
+// GameState — 앱 전역 상태 (싱글톤)
+// persistent: 저장 대상 / run: 런 종료 시 초기화
+// ============================================================
+const GameState = {
+  persistent: {
+    highestStage: 0,
+    bestScore: 0,
+    bestWave: 0,
+    settings: { sound: true },
+  },
+  run: null,
+
+  newRun() {
+    // 마법별 강화 배율 (UpgradeData의 마법 연마가 수정)
+    const magicMods = {};
+    for (const k of MagicOrder) {
+      magicMods[k] = { dmgMul: 1, cdMul: 1, radiusMul: 1, pierceAdd: 0, jumpsAdd: 0 };
+    }
+    this.run = {
+      stage: 1,
+      wave: 0,
+      score: 0,
+      kills: 0,
+      // 강화로 변하는 스탯 (SkillManager가 수정)
+      stats: {
+        damageMul: 1, cooldownMul: 1, speedMul: 1, bonusHp: 0,
+        critChance: 0.05, critMul: 1.5,   // 치명타 기본치
+        magicMods,
+      },
+      upgrades: [],          // 선택 이력 (id 순서대로)
+      upgradeLevels: {},     // id → 현재 레벨
+      pendingEvolutions: [], // 각성 달성한 진화 id (다음 버전에서 진짜 진화로 소비)
+    };
+    return this.run;
+  },
+
+  // 마법별 강화 배율 조회 (런 밖에서도 안전한 기본값)
+  magicMod(key) {
+    if (this.run && this.run.stats.magicMods[key]) return this.run.stats.magicMods[key];
+    return { dmgMul: 1, cdMul: 1, radiusMul: 1, pierceAdd: 0, jumpsAdd: 0 };
+  },
+
+  endRun() {
+    if (!this.run) return;
+    if (this.run.score > this.persistent.bestScore) this.persistent.bestScore = this.run.score;
+    if (this.run.wave > this.persistent.bestWave) this.persistent.bestWave = this.run.wave;
+    if (this.run.stage > this.persistent.highestStage) this.persistent.highestStage = this.run.stage;
+    SaveManager.save();
+    this.run = null;
+  },
+};
+
+
+// ===== js/magic/Magic.js =====
+// ============================================================
+// Magic — 마법 1종의 런타임 상태 [GPT 요청 ⑤⑧]
+// 데이터(MagicData)와 시전 로직을 연결. 쿨다운을 스스로 관리한다.
+// 계층: Magic → (MagicManager가 생성) Projectile → Explosion → StatusEffect
+// ============================================================
+class Magic {
+  constructor(key) {
+    this.key = key;
+    this.data = MagicData[key];
+    this.cooldownLeft = 0;
+  }
+  update(dt) { this.cooldownLeft = Math.max(0, this.cooldownLeft - dt); }
+  get ready() { return this.cooldownLeft <= 0; }
+  startCooldown(mul = 1) { this.cooldownLeft = this.data.cooldown * mul; }
+}
+
+
+// ===== js/magic/MagicBook.js =====
+// ============================================================
+// MagicBook — 플레이어가 보유/장착한 마법 [Task #7: 습득제]
+//
+// 시작은 매직 미사일 1개만. 나머지는 강화 선택으로 "습득"(add)한다.
+// "마법책이 페이지로 채워진다" 컨셉.
+// ============================================================
+class MagicBook {
+  constructor(startKeys = ['magicMissile']) {
+    this.magics = startKeys.map(k => new Magic(k));
+    this.activeIndex = 0;
+  }
+  get active() { return this.magics[this.activeIndex]; }
+  get keys() { return this.magics.map(m => m.data.__key); }
+
+  owns(key) { return this.magics.some(m => m.data.__key === key); }
+
+  // 새 마법 습득 (강화에서 호출). 이미 있으면 무시.
+  add(key) {
+    if (this.owns(key)) return false;
+    this.magics.push(new Magic(key));
+    return true;
+  }
+
+  setActive(i) {
+    this.activeIndex = Phaser.Math.Clamp(i, 0, this.magics.length - 1);
+    return this.active;
+  }
+  setActiveByKey(key) {
+    const i = this.magics.findIndex(m => m.data.__key === key);
+    if (i >= 0) this.activeIndex = i;
+    return this.active;
+  }
+  cycle(dir = 1) {
+    this.activeIndex = (this.activeIndex + dir + this.magics.length) % this.magics.length;
+    return this.active;
+  }
+  update(dt) { for (const m of this.magics) m.update(dt); }
+}
+
+
+// ===== js/entities/Projectile.js =====
+// ============================================================
+// Projectile — 마법 발사체 (풀링). 마법별 텍스처/특성을 data에서 읽음
+// 트윈 미사용: 팝인 스케일을 step()에서 수식 처리
+// ============================================================
+class Projectile extends Phaser.GameObjects.Sprite {
+  constructor(scene) {
+    super(scene, 0, 0, 'missile');
+    scene.add.existing(this);
+    this.setDepth(15);
+    this.setActive(false).setVisible(false);
+  }
+
+  fire(x, y, dx, dy, data, damageMul, opts = {}) {
+    const charged = !!opts.charged;
+    const ch = opts.magicCharge || {};   // 마법별 charge 설정
+
+    this.magicKey = opts.magicKey;
+    this.charged = charged;
+    this.popT = 0;
+    this.spin = !!data.spin;
+
+    // 차지 배율 (마법별). 없으면 기본값.
+    const dmgMul   = charged ? (ch.dmgMul   || 2.0) : 1;
+    const radiusMul= charged ? (ch.radiusMul|| 1.3) : 1;
+    const widthMul = charged ? (ch.widthMul || 1.0) : 1;   // 관통 판정폭
+    const pierceAdd= charged ? (ch.pierceAdd|| 0)   : 0;
+
+    this.baseScale = (data.scale || 3) * (charged ? Math.max(radiusMul, widthMul, 1.3) : 1);
+    this.setTexture(data.texture || 'missile');
+    this.setPosition(x, y);
+    const spd = data.speed * (charged ? 1.1 : 1);
+    this.vx = dx * spd;
+    this.vy = dy * spd;
+    this.damage = data.damage * damageMul * dmgMul;
+    this.radius = data.radius * radiusMul * widthMul;
+    this.life = data.lifetime;
+    this.pierceLeft = (data.pierce || 0) + pierceAdd + (opts.modPierceAdd || 0)
+                      + (charged && !data.pierce ? 1 : 0);
+    this.hitSet = new Set();
+
+    this.rotation = Math.atan2(dy, dx);
+    this.setTint(charged ? 0xffffff : (data.tint || 0xffffff));
+    this.setScale(this.baseScale * 0.7);
+    this.setActive(true).setVisible(true);
+  }
+
+  step(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.life -= dt;
+    if (this.spin) this.rotation += dt * 10;
+
+    if (this.popT < 1) {
+      this.popT = Math.min(1, this.popT + dt / 0.09);
+      this.setScale(this.baseScale * (0.7 + 0.3 * this.popT));
+    }
+    if (this.life <= 0) this.despawn();
+  }
+
+  despawn() { this.setActive(false).setVisible(false); }
+}
+
+
+// ===== js/entities/Player.js =====
+// ============================================================
+// Player — 슬라임 마법사 [Task #3 v5: 관성 전단(shear) 변형]
+//
+// 비주얼 구조:
+//  - root(this): 논리 위치
+//  - visual: 스쿼시/스트레치/트레일이 적용되는 컨테이너
+//  - slices[5]: 같은 텍스처를 가로 5단으로 crop한 스프라이트들.
+//      관성에 따라 윗단일수록 뒤로 처지게 x 오프셋 → 몸이 '휘는' 비대칭 변형.
+//      바닥 단은 항상 고정(접지감). 회전은 사용하지 않는다.
+//  - 전단값은 스프링(질량-감쇠)으로 구동 → 급정거/방향 전환 시
+//      윗부분이 관성으로 출렁 넘어갔다가 되돌아온다.
+// 참고: 좌우 반전(flip)은 사용하지 않는다. 슬라임 얼굴이 대칭이고,
+//      하이라이트 광원 방향은 고정이 맞으며, crop+flip 조합 버그도 피한다.
+// ============================================================
+class Player extends Phaser.GameObjects.Container {
+  constructor(scene, x, y) {
+    super(scene, x, y);
+    scene.add.existing(this);
+    this.setDepth(10);
+
+    // 그림자 (전단의 영향을 받지 않는 접지 기준)
+    this.shadow = scene.add.ellipse(0, 2, 44, 12, 0x000000, 0.22);
+    this.add(this.shadow);
+
+    // ---- 슬라이스 조립 ----
+    this.visual = scene.add.container(0, 4);
+    this.add(this.visual);
+
+    const src = scene.textures.get('slime').getSourceImage();
+    this.texW = src.width; this.texH = src.height;
+    const K = 5;
+    this.slices = [];
+    for (let i = 0; i < K; i++) {
+      const top = Math.round(this.texH * i / K);
+      const bot = Math.round(this.texH * (i + 1) / K);
+      const sp = scene.add.sprite(0, 0, 'slime').setOrigin(0.5, 1).setScale(4);
+      sp.setCrop(0, top, this.texW, bot - top);
+      // 윗단일수록 크게 처짐 (바닥 단은 0 = 접지 고정)
+      const factor = Math.pow(1 - i / (K - 1), 1.25);
+      this.visual.add(sp);
+      this.slices.push({ sp, top, bot, factor });
+    }
+
+    // 이동 상태
+    this.vx = 0; this.vy = 0;
+    this.state = 'idle';
+    this.wobbleT = 0;
+    this.transitionTween = null;
+
+    // 전단 스프링 상태
+    this.shear = 0;       // 현재 전단(px, 윗단 기준)
+    this.shearVel = 0;
+
+    // 마지막 이동 방향 (적이 없을 때 발사 방향 폴백)
+    this.lastDir = { x: 0, y: -1 };
+
+    this._scheduleBlink();
+
+    this.hp = PlayerData.maxHp;
+    this.maxHp = PlayerData.maxHp;
+    this.magicBook = new MagicBook();
+    // 무적/피격
+    this.invT = 0;          // 무적 잔여(초)
+    this.hurtFlashT = 0;
+  }
+
+  // ---------- 매 프레임 ----------
+  update(dt, input) {
+    const F = PlayerData.feel;
+    const speed = PlayerData.moveSpeed *
+      ((GameState.run && GameState.run.stats.speedMul) || 1);   // 강화 반영
+
+    // 마법 쿨다운 갱신 (누락 시 첫 발 이후 영구 정지 → 반드시 매 프레임 호출)
+    this.magicBook.update(dt);
+
+    // 무적/피격 플래시 감쇠 + 무적 중 깜빡임
+    if (this.invT > 0) {
+      this.invT -= dt;
+      // 무적 깜빡임: 슬라이스 전체 알파 + 붉은 틴트 점멸
+      const blink = Math.sin(this.invT * 28) > 0;
+      const a = blink ? 0.35 : 0.9;
+      for (const sl of this.slices) {
+        sl.sp.setAlpha(a);
+        if (blink) sl.sp.setTint(0xff8888); else sl.sp.clearTint();
+      }
+      if (this.invT <= 0) {
+        for (const sl of this.slices) { sl.sp.setAlpha(1); sl.sp.clearTint(); }
+      }
+    }
+
+    // 1) 속도 지수 보간 (프레임 독립)
+    const tx = (input ? input.x : 0) * speed;
+    const ty = (input ? input.y : 0) * speed;
+    const hasInput = Math.hypot(tx, ty) > 1;
+    const tau = hasInput ? F.accelTime : F.decelTime;
+    const k = 1 - Math.exp(-dt / tau);
+    this.vx += (tx - this.vx) * k;
+    this.vy += (ty - this.vy) * k;
+
+    // 2) 위치 + 경계
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    const B = BalanceData.field, m = 30;
+    this.x = Phaser.Math.Clamp(this.x, m, B.width - m);
+    this.y = Phaser.Math.Clamp(this.y, m, B.height - m);
+
+    // 3) 상태 전환
+    const spd = Math.hypot(this.vx, this.vy);
+    const speedRatio = spd / speed;
+    if (spd > 40) { this.lastDir.x = this.vx / spd; this.lastDir.y = this.vy / spd; }
+    if (this.state === 'idle' && hasInput) this._enterMoving();
+    else if (this.state === 'moving' && !hasInput && speedRatio < 0.05) this._enterIdle();
+
+    // 4) 관성 전단 스프링 (항상 동작 — 정지 후에도 출렁이며 복원)
+    //    이동 방향의 반대로 윗부분이 처진다
+    const sr2 = speedRatio * speedRatio;
+    const shearTarget = -(this.vx / speed) * F.shearAmp * (0.35 + 0.65 * speedRatio);
+    const w = F.shearFreq;
+    const c = 2 * F.shearDamp * w;
+    this.shearVel += ((shearTarget - this.shear) * w * w - this.shearVel * c) * dt;
+    this.shear += this.shearVel * dt;
+    for (const sl of this.slices) sl.sp.x = this.shear * sl.factor;
+
+    // 5) 스쿼시/스트레치/트레일
+    if (!this.transitionTween) {
+      if (this.state === 'moving') {
+        this.wobbleT += dt * F.wobbleFreq * Math.PI * 2;
+        const wob = Math.sin(this.wobbleT);
+        const calm = 1 - speedRatio * 0.7;
+        const wobAmt = F.wobbleAmp * speedRatio * calm;
+
+        const nx = spd > 1 ? Math.abs(this.vx) / spd : 0;
+        const ny = spd > 1 ? Math.abs(this.vy) / spd : 0;
+        const st = F.stretchAmp * sr2;
+        const sx = 1 + st * nx - st * ny * 0.5 - wob * wobAmt;
+        const sy = 1 + st * ny * 0.9 - st * nx * 0.5 + wob * wobAmt;
+        this.visual.setScale(sx, sy);
+
+        // 몸 전체 트레일 (전단과 합쳐져 '앞은 붙고 뒤가 늘어지는' 형태)
+        const dX = spd > 1 ? this.vx / spd : 0;
+        const dY = spd > 1 ? this.vy / spd : 0;
+        const lk = Math.min(1, dt * 14);
+        this.visual.x += (-dX * F.trailAmp * sr2 - this.visual.x) * lk;
+        this.visual.y = 4 + (-dY * F.trailAmp * sr2 * 0.7)
+                          - Math.max(0, wob) * F.hopAmp * speedRatio * calm;
+        this.shadow.setScale(1 - Math.max(0, wob) * 0.10 * speedRatio * calm, 1);
+      } else {
+        // idle 숨쉬기 + 트레일 복귀 (전단은 4번 스프링이 알아서 복원)
+        this.wobbleT += dt * 2.4;
+        const b = Math.sin(this.wobbleT) * 0.025;
+        this.visual.setScale(1 - b, 1 + b);
+        const rk = Math.min(1, dt * 10);
+        this.visual.x += (0 - this.visual.x) * rk;
+        this.visual.y = 4;
+        this.shadow.setScale(1, 1);
+      }
+    }
+  }
+
+  // ---------- HP 강화/회복 (Task #7) ----------
+  effectiveMaxHp() {
+    return PlayerData.maxHp + ((GameState.run && GameState.run.stats.bonusHp) || 0);
+  }
+  // bonusHp 강화 반영: 최대치가 늘면 늘어난 만큼 현재 HP도 올림
+  applyBonusHp() {
+    const max = this.effectiveMaxHp();
+    if (max > this.maxHp) this.hp += (max - this.maxHp); // 증가분만큼 회복
+    this.maxHp = max;
+    this.hp = Math.min(this.hp, this.maxHp);
+  }
+  healBy(amount) {
+    this.hp = Math.min(this.effectiveMaxHp(), this.hp + amount);
+    SoundManager.heal();
+    // 회복 파티클
+    if (this.scene.fxBurst) this.scene.fxBurst.emitParticleAt(this.x, this.y - 20, 8);
+  }
+
+  // ---------- 상태 전환 ----------
+  _enterMoving() {
+    this.state = 'moving';
+    this._killTransition();
+    const F = PlayerData.feel;
+    this.visual.setScale(2 - F.startSquash, F.startSquash);
+    this.transitionTween = this.scene.tweens.add({
+      targets: this.visual, scaleX: 1, scaleY: 1,
+      duration: 110, ease: 'Sine.Out',
+      onComplete: () => { this.transitionTween = null; },
+    });
+  }
+
+  _enterIdle() {
+    this.state = 'idle';
+    this._killTransition();
+    const F = PlayerData.feel;
+    this.visual.setScale(1.22, 0.78);
+    this.transitionTween = this.scene.tweens.add({
+      targets: this.visual, scaleX: 1, scaleY: 1,
+      duration: F.stopBounceTime, ease: 'Elastic.Out', easeParams: [1.4, 0.45],
+      onComplete: () => { this.transitionTween = null; },
+    });
+  }
+
+  _killTransition() {
+    if (this.transitionTween) { this.transitionTween.stop(); this.transitionTween = null; }
+  }
+
+  // ---------- 피격 ----------
+  takeDamage(dmg, fromX, fromY) {
+    if (this.invT > 0) return false;   // 무적 중 무시
+    this.hp = Math.max(0, this.hp - dmg);
+    this.invT = PlayerData.invincibleTime;
+
+    // 피격 반동: 맞은 반대로 전단 임펄스 + 넉백 약간
+    const dx = this.x - fromX;
+    this.shearVel += Math.sign(dx || 1) * 200;
+
+    if (this.scene.onPlayerDamaged) this.scene.onPlayerDamaged(this.hp);
+    return true;
+  }
+
+  // ---------- 시전 반동 ----------
+  castRecoil(dx, dy, charged = false) {
+    // 발사 반대 방향으로 몸 윗부분이 젖혀지는 반동 (전단 스프링에 임펄스)
+    this.shearVel += -dx * (charged ? 620 : 300);
+  }
+
+  // ---------- 블링크 ----------
+  _scheduleBlink() {
+    const F = PlayerData.feel;
+    const delay = Phaser.Math.FloatBetween(F.blinkMin, F.blinkMax) * 1000;
+    this.scene.time.delayedCall(delay, () => {
+      if (!this.active) return;
+      this._setAllTexture('slime_blink');
+      this.scene.time.delayedCall(120, () => {
+        if (!this.active) return;
+        this._setAllTexture('slime');
+        this._scheduleBlink();
+      });
+    });
+  }
+
+  _setAllTexture(key) {
+    for (const sl of this.slices) {
+      sl.sp.setTexture(key);
+      sl.sp.setCrop(0, sl.top, this.texW, sl.bot - sl.top); // setTexture 후 crop 재적용 필수
+    }
+  }
+}
+
+
+// ===== js/entities/Enemy.js =====
+// ============================================================
+// Enemy — 적 기본 클래스 [상속 구조: Melee / Ranged / Boss]
+// 공통: HP, 피격(넉백/플래시/스프링 휘청), 사망 연출
+// 모든 연출은 수식/스프링 기반 (일반 피격 트윈 0개 — 성능)
+// ============================================================
+class Enemy extends Phaser.GameObjects.Container {
+  constructor(scene, x, y, data) {
+    super(scene, x, y);
+    scene.add.existing(this);
+    this.setDepth(9);
+
+    this.data0 = data;
+    this.hpMax = data.hp;
+    this.hp = data.hp;
+    this.radius = data.radius;
+    this.speed = data.speed;
+    this.dmg = data.damage;   // 웨이브 스케일링으로 덮어씀 (data0 직접 사용 금지)
+    this.alive = true;
+    this.dying = false;
+
+    // 넉백 속도 (마찰로 감쇠)
+    this.kvx = 0; this.kvy = 0;
+
+    // 피격 연출 상태 (수식)
+    this.flashT = 0;
+    this.wobble = 0; this.wobbleVel = 0;
+
+    // 접촉 공격 쿨다운
+    this.touchCd = 0;
+
+    // 둔화 상태
+    this.slowFactor = 1;
+    this.slowT = 0;
+  }
+
+  applySlow(factor, duration) {
+    // 더 강한 둔화로 갱신, 지속시간 리셋
+    this.slowFactor = Math.min(this.slowFactor, factor);
+    this.slowT = Math.max(this.slowT, duration);
+  }
+
+  // 하위 클래스가 스프라이트/그림자/HP바를 붙인 뒤 호출
+  _initVisual(textureKey) {
+    this.shadow = this.scene.add.ellipse(0, 2, this.radius * 2.2, this.radius * 0.6, 0x000000, 0.2);
+    this.sprite = this.scene.add.sprite(0, 4, textureKey).setOrigin(0.5, 1).setScale(this.data0.scale);
+    this.hpBar = this.scene.add.graphics();
+    this.add([this.shadow, this.sprite, this.hpBar]);
+    this._drawHp();
+  }
+
+  _drawHp() {
+    const g = this.hpBar; g.clear();
+    if (this.hp >= this.hpMax) return; // 풀피면 숨김 (화면 깔끔)
+    const w = this.radius * 2.4, h = 4, y = -this.radius * 3.2;
+    g.fillStyle(0x2b2140, 0.8).fillRect(-w / 2 - 1, y - 1, w + 2, h + 2);
+    const ratio = Math.max(0, this.hp / this.hpMax);
+    const col = ratio > 0.5 ? 0x6fdc8c : (ratio > 0.25 ? 0xffcc55 : 0xff6b6b);
+    g.fillStyle(col, 1).fillRect(-w / 2, y, w * ratio, h);
+  }
+
+  // 공통 물리/연출 갱신. 하위 클래스는 _ai(dt, player)만 구현
+  update(dt, player) {
+    if (this.dying) { this._updateDeath(dt); return; }
+    if (!this.alive) return;
+
+    // 넉백 감쇠 이동
+    this.x += this.kvx * dt;
+    this.y += this.kvy * dt;
+    const fr = Math.exp(-dt / 0.12);
+    this.kvx *= fr; this.kvy *= fr;
+
+    // 넉백이 약해지면 AI 이동 허용 (맞는 중엔 밀림 우선)
+    const knockActive = Math.hypot(this.kvx, this.kvy) > 30;
+    if (!knockActive) this._ai(dt, player);
+
+    // 필드 경계
+    const B = BalanceData.field, m = 20;
+    this.x = Phaser.Math.Clamp(this.x, m, B.width - m);
+    this.y = Phaser.Math.Clamp(this.y, m, B.height - m);
+
+    if (this.touchCd > 0) this.touchCd -= dt;
+
+    // 둔화 타이머
+    if (this.slowT > 0) {
+      this.slowT -= dt;
+      if (this.slowT <= 0) { this.slowFactor = 1; if (this.flashT <= 0) this.sprite.clearTint(); }
+      else if (this.flashT <= 0) this.sprite.setTint(0x9fd8ff); // 얼어붙은 색
+    }
+
+    // 스프링 휘청 복원
+    const w = 22, c = 2 * 0.35 * w;
+    this.wobbleVel += (-this.wobble * w * w - this.wobbleVel * c) * dt;
+    this.wobble += this.wobbleVel * dt;
+    this.sprite.rotation = this.wobble;
+
+    // 플래시 감쇠
+    if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.sprite.clearTint(); }
+
+    this._animate(dt);
+  }
+
+  _ai(dt, player) {}      // 하위 구현
+  _animate(dt) {}         // 하위 구현
+
+  takeDamage(dmg, fromX, fromY, charged = false, kdx = null, kdy = null) {
+    if (!this.alive || this.dying) return;
+    this.hp -= dmg;
+    this._drawHp();
+
+    // 흰 플래시
+    this.sprite.setTintFill(0xffffff);
+    this.flashT = charged ? 0.1 : 0.06;
+
+    // 넉백 방향: 투사체 진행방향(kdx,kdy) 우선, 없으면 좌표차 폴백
+    let nx, ny;
+    if (kdx !== null && (kdx !== 0 || kdy !== 0)) {
+      nx = kdx; ny = kdy;
+    } else {
+      const dx = this.x - fromX, dy = this.y - fromY;
+      const d = Math.hypot(dx, dy) || 1;
+      nx = dx / d; ny = dy / d;
+    }
+    const power = this.data0.knockback * (charged ? 2.2 : 1);
+    this.kvx += nx * power;
+    this.kvy += ny * power;
+
+    // 휘청 임펄스 (수평 성분 기준)
+    const dir = Math.sign(nx) || 1;
+    this.wobbleVel += dir * (charged ? 9 : 4);
+
+    if (this.hp <= 0) this._startDeath(nx, ny, charged);
+  }
+
+  _startDeath(nx, ny, charged) {
+    this.dying = true;
+    this.alive = false;
+    this.deathT = 0;
+    this._drawHp();
+
+    // 사망 연출: 넉백 방향으로 튀어오르며 회전
+    this.deathVx = nx * 140;
+    this.deathVy = -180;
+    this.deathSpin = (Math.random() < 0.5 ? -1 : 1) * 8;
+
+    this.scene.fxBurst.emitParticleAt(this.x, this.y - this.radius, charged ? 20 : 12);
+    SoundManager.pop();
+
+    // 점수/처치 알림 (매니저가 집계)
+    if (this.scene.onEnemyKilled) this.scene.onEnemyKilled(this);
+  }
+
+  _updateDeath(dt) {
+    this.deathT += dt;
+    this.deathVy += 900 * dt;                 // 중력
+    this.x += this.deathVx * dt;
+    this.y += this.deathVy * dt;
+    this.sprite.rotation += this.deathSpin * dt;
+    const a = Math.max(0, 1 - this.deathT / 0.5);
+    this.setAlpha(a);
+    this.setScale(a);                          // 쪼그라들며 사라짐
+    if (this.deathT >= 0.5) this._remove();
+  }
+
+  _remove() {
+    this.destroyed = true;
+    this.destroy();
+  }
+}
+
+// ============================================================
+// GoblinEnemy — 근접 추적 몬스터 [Task #5]
+// AI: 플레이어를 향해 직진 추적 → 접촉 시 데미지
+// ============================================================
+class GoblinEnemy extends Enemy {
+  constructor(scene, x, y, mods = {}) {
+    super(scene, x, y, EnemyData.goblin);
+    // 웨이브 스케일링 (WaveData.mods)
+    if (mods.hpMul) { this.hpMax = Math.round(this.hpMax * mods.hpMul); this.hp = this.hpMax; }
+    if (mods.dmgAdd) this.dmg += mods.dmgAdd;
+    if (mods.speedAdd) this.speed += mods.speedAdd;
+    this._initVisual('goblin_a');
+    this.walkT = Math.random() * 10;
+    this.facing = 1;
+  }
+
+  _ai(dt, player) {
+    if (!player || !player.active) return;
+    const dx = player.x - this.x, dy = (player.y - 20) - this.y;
+    const d = Math.hypot(dx, dy) || 1;
+
+    // 접촉 사거리 밖이면 추적
+    const touchDist = this.radius + PlayerData.bodyRadius + 6;
+    if (d > touchDist) {
+      const sp = this.speed * this.slowFactor;
+      this.x += (dx / d) * sp * dt;
+      this.y += (dy / d) * sp * dt;
+      if (Math.abs(dx) > 4) { this.facing = dx > 0 ? 1 : -1; this.sprite.setFlipX(this.facing < 0); }
+      this.moving = true;
+    } else {
+      this.moving = false;
+      // 접촉 공격
+      if (this.touchCd <= 0) {
+        this.touchCd = this.data0.touchCooldown;
+        if (this.scene.onPlayerHit) this.scene.onPlayerHit(this.dmg, this.x, this.y);
+        // 공격 모션: 살짝 돌진하듯 앞으로 튐
+        this.wobbleVel += this.facing * 6;
+      }
+    }
+  }
+
+  _animate(dt) {
+    // 걷기: 2프레임 토글 + 콩콩 스쿼시
+    if (this.moving) {
+      this.walkT += dt * 8;
+      const frame = Math.floor(this.walkT) % 2 === 0 ? 'goblin_a' : 'goblin_b';
+      if (this.sprite.texture.key !== frame && this.flashT <= 0) this.sprite.setTexture(frame);
+      const bob = Math.abs(Math.sin(this.walkT * Math.PI));
+      this.sprite.setScale(this.data0.scale * (1 + bob * 0.04), this.data0.scale * (1 - bob * 0.04));
+    } else {
+      this.sprite.setScale(this.data0.scale, this.data0.scale);
+    }
+  }
+}
+
+// ============================================================
+// BossGoblinKing — 웨이브 10 보스 [Task #7]
+// 패턴:
+//   chase  → 느리게 추적. 주기적으로 돌진 준비 / 부하 소환
+//   windup → 붉게 점멸하며 부풀어오름 (0.75초 예고 — 피할 시간)
+//   dash   → 예고 종료 시점의 플레이어 방향으로 고속 돌진
+//   recover→ 잠깐 멈춤 (반격 찬스)
+// 연출은 전부 수식 기반 (트윈 없음).
+// ============================================================
+class BossGoblinKing extends Enemy {
+  constructor(scene, x, y) {
+    super(scene, x, y, EnemyData.goblinKing);
+    this._initVisual('goblin_king');
+    this.walkT = 0;
+    this.facing = 1;
+    this.moving = false;
+
+    this.bstate = 'chase';
+    this.stateT = 0;
+    this.dashT = this.data0.dashCd * 0.6;  // 첫 돌진은 조금 빨리
+    this.summonT = this.data0.summonCd * 0.5;
+    this.dashDir = { x: 0, y: 1 };
+  }
+
+  _ai(dt, player) {
+    if (!player || !player.active) return;
+    const D = this.data0;
+    this.stateT += dt;
+
+    const dx = player.x - this.x, dy = (player.y - 20) - this.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const touchDist = this.radius + PlayerData.bodyRadius + 6;
+
+    // 접촉 공격 (모든 상태 공통 — 돌진 중 부딪혀도 아픔)
+    if (d < touchDist && this.touchCd <= 0) {
+      this.touchCd = D.touchCooldown;
+      if (this.scene.onPlayerHit) this.scene.onPlayerHit(this.dmg, this.x, this.y);
+      this.wobbleVel += this.facing * 5;
+    }
+
+    switch (this.bstate) {
+      case 'chase': {
+        if (d > touchDist) {
+          const sp = this.speed * this.slowFactor;
+          this.x += (dx / d) * sp * dt;
+          this.y += (dy / d) * sp * dt;
+          this.moving = true;
+        } else this.moving = false;
+        if (Math.abs(dx) > 4) { this.facing = dx > 0 ? 1 : -1; this.sprite.setFlipX(this.facing < 0); }
+
+        // 돌진 타이머
+        this.dashT -= dt;
+        if (this.dashT <= 0 && d < 620) {
+          this.bstate = 'windup'; this.stateT = 0;
+          SoundManager.bossGrowl();
+        }
+        // 소환 타이머
+        this.summonT -= dt;
+        if (this.summonT <= 0) {
+          this.summonT = D.summonCd;
+          if (this.scene.waveManager) this.scene.waveManager.bossSummon(this);
+        }
+        break;
+      }
+      case 'windup': {
+        this.moving = false;
+        // 붉은 점멸 + 부풀기 (피격 플래시 중엔 양보)
+        if (this.flashT <= 0) {
+          const blink = Math.sin(this.stateT * 30) > 0;
+          if (blink) this.sprite.setTint(0xff5a5a); else this.sprite.clearTint();
+        }
+        const puff = 1 + Math.min(1, this.stateT / D.windup) * 0.12;
+        this.sprite.setScale(D.scale * puff, D.scale * puff);
+        if (this.stateT >= D.windup) {
+          // 이 순간의 플레이어 위치로 방향 고정 → 옆으로 피할 수 있다
+          this.dashDir.x = dx / d; this.dashDir.y = dy / d;
+          this.bstate = 'dash'; this.stateT = 0;
+          if (this.flashT <= 0) this.sprite.clearTint();
+          this.sprite.setScale(D.scale, D.scale);
+          SoundManager.bossDash();
+          this.scene.gameFeel.shake(0.004, 120);
+        }
+        break;
+      }
+      case 'dash': {
+        this.x += this.dashDir.x * D.dashSpeed * dt;
+        this.y += this.dashDir.y * D.dashSpeed * dt;
+        this.moving = true;
+        if (this.stateT >= D.dashTime) { this.bstate = 'recover'; this.stateT = 0; }
+        break;
+      }
+      case 'recover': {
+        this.moving = false;
+        if (this.stateT >= D.recoverTime) {
+          this.bstate = 'chase'; this.stateT = 0;
+          this.dashT = D.dashCd;
+        }
+        break;
+      }
+    }
+  }
+
+  _animate(dt) {
+    if (this.bstate === 'windup') return; // windup은 자체 스케일 연출
+    if (this.moving) {
+      this.walkT += dt * 6;
+      const bob = Math.abs(Math.sin(this.walkT * Math.PI));
+      this.sprite.setScale(this.data0.scale * (1 + bob * 0.03), this.data0.scale * (1 - bob * 0.03));
+    } else {
+      // 숨쉬기
+      this.walkT += dt * 2;
+      const b = Math.sin(this.walkT) * 0.02;
+      this.sprite.setScale(this.data0.scale * (1 - b), this.data0.scale * (1 + b));
+    }
+  }
+
+  takeDamage(dmg, fromX, fromY, charged, kdx, kdy) {
+    super.takeDamage(dmg, fromX, fromY, charged, kdx, kdy);
+    if (this.scene.hud) this.scene.hud.setBossHp(Math.max(0, this.hp) / this.hpMax);
+  }
+
+  _startDeath(nx, ny, charged) {
+    // 보스 사망: 더 크고 느리게
+    this.deathDurOverride = 1.0;
+    super._startDeath(nx, ny, charged);
+    this.deathVy = -260;
+    this.deathSpin *= 0.6;
+    this.scene.fxBurst.emitParticleAt(this.x, this.y - 30, 40);
+    this.scene.fxExplosion.emitParticleAt(this.x, this.y - 30, 24);
+  }
+
+  _updateDeath(dt) {
+    const dur = this.deathDurOverride || 0.5;
+    this.deathT += dt;
+    this.deathVy += 700 * dt;
+    this.x += this.deathVx * dt;
+    this.y += this.deathVy * dt;
+    this.sprite.rotation += this.deathSpin * dt;
+    const a = Math.max(0, 1 - this.deathT / dur);
+    this.setAlpha(a);
+    this.setScale(a);
+    if (this.deathT >= dur) this._remove();
+  }
+}
+
+
+// ===== js/managers/SaveManager.js =====
+// localStorage 저장/불러오기
+const SaveManager = {
+  KEY: 'slime-wizard-save-v1',
+  save() {
+    try { localStorage.setItem(this.KEY, JSON.stringify(GameState.persistent)); } catch (e) {}
+  },
+  load() {
+    try {
+      const raw = localStorage.getItem(this.KEY);
+      if (raw) Object.assign(GameState.persistent, JSON.parse(raw));
+    } catch (e) {}
+  },
+};
+
+
+// ===== js/managers/SoundManager.js =====
+// ============================================================
+// SoundManager — WebAudio 신스 (에셋 파일 없이 합성)
+// 마법별로 파형·음정·길이를 달리해 청각적으로 구분되게 함
+// iOS: 첫 터치 후 unlock()
+// ============================================================
+const SoundManager = {
+  ctx: null,
+  unlock() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  },
+
+  _tone(f0, f1, dur, type = 'square', vol = 0.06, delay = 0) {
+    if (!this.ctx || !GameState.persistent.settings.sound) return;
+    const t = this.ctx.currentTime + delay;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(t); osc.stop(t + dur);
+  },
+  _noise(dur, vol = 0.06) {
+    if (!this.ctx || !GameState.persistent.settings.sound) return;
+    const t = this.ctx.currentTime;
+    const n = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const g = this.ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(g).connect(this.ctx.destination); src.start(t);
+  },
+
+  // 매직 미사일: 짧고 맑은 뿅
+  shoot() { this._tone(920, 380, 0.09, 'square', 0.05); },
+  hit()   { this._tone(240, 90, 0.07, 'square', 0.07); },
+
+  // 파이어볼: 낮게 부웅 + 명중 시 노이즈 폭발
+  fireCast() { this._tone(300, 140, 0.22, 'sawtooth', 0.06); },
+  fireHit()  { this._noise(0.28, 0.11); this._tone(120, 40, 0.22, 'sawtooth', 0.07); },
+
+  // 아이스 스피어: 높고 차가운 슈웅 (삼각파)
+  iceCast() { this._tone(1500, 700, 0.12, 'triangle', 0.05); },
+  iceHit()  { this._tone(2000, 900, 0.10, 'triangle', 0.06); this._tone(1200, 600, 0.08, 'sine', 0.04); },
+
+  // 체인 라이트닝: 지지직 (빠른 고음 + 노이즈)
+  boltCast() { this._tone(700, 1400, 0.08, 'square', 0.05); },
+  boltHit()  { this._noise(0.06, 0.06); this._tone(1600, 400, 0.06, 'square', 0.05); },
+
+  // 강샷/피격/처치
+  shootBig() { this._tone(560, 180, 0.20, 'sawtooth', 0.07); },
+  hitBig()   { this._tone(160, 50, 0.16, 'sawtooth', 0.10); },
+  pop()      { this._tone(500, 60, 0.22, 'triangle', 0.09); },
+  hurt()     { this._tone(200, 300, 0.14, 'sawtooth', 0.09); },
+
+  // ---- 웨이브/진행 (Task #7) ----
+  waveStart()  { this._tone(520, 780, 0.12, 'square', 0.06); this._tone(780, 1040, 0.14, 'square', 0.06, 0.10); },
+  waveClear()  { this._tone(523, 523, 0.09, 'square', 0.06); this._tone(659, 659, 0.09, 'square', 0.06, 0.09); this._tone(784, 784, 0.16, 'square', 0.06, 0.18); },
+  countTick()  { this._tone(880, 860, 0.05, 'square', 0.05); },
+  countGo()    { this._tone(660, 1320, 0.16, 'square', 0.07); },
+  page()       { this._noise(0.09, 0.05); this._tone(700, 1250, 0.11, 'triangle', 0.05); },
+  heal()       { this._tone(600, 950, 0.16, 'sine', 0.06); },
+  crit()       { this._tone(1400, 500, 0.07, 'square', 0.06); },
+
+  // ---- 보스 ----
+  bossRoar()   { this._tone(130, 55, 0.55, 'sawtooth', 0.13); this._noise(0.35, 0.08); },
+  bossGrowl()  { this._tone(170, 90, 0.28, 'sawtooth', 0.10); },
+  bossDash()   { this._noise(0.14, 0.09); this._tone(300, 120, 0.16, 'sawtooth', 0.08); },
+  summon()     { this._tone(400, 800, 0.14, 'triangle', 0.06); },
+
+  // ---- 결과 ----
+  victory()    { const n = [523, 659, 784, 1046]; n.forEach((f, i) => this._tone(f, f, 0.20, 'square', 0.06, i * 0.14)); },
+  gameOver()   { const n = [392, 330, 262, 196]; n.forEach((f, i) => this._tone(f, f * 0.94, 0.24, 'triangle', 0.07, i * 0.20)); },
+
+  play(key) { if (this[key]) this[key](); },
+};
+
+
+// ===== js/managers/GameFeelManager.js =====
+// ============================================================
+// GameFeelManager — 손맛 담당 [GPT 요청 ⑦]
+// Camera Shake / Hit Stop / Flash / Slow Motion / Screen Flash
+// Task #2: 인터페이스 정의 + shake만 동작 (씬 전환 데모용)
+// ============================================================
+class GameFeelManager {
+  constructor(scene) { this.scene = scene; }
+
+  shake(intensity = 0.005, duration = 100) {
+    this.scene.cameras.main.shake(duration, intensity);
+  }
+  flash(color = 0xffffff, duration = 80) {
+    this.scene.cameras.main.flash(duration, (color >> 16) & 255, (color >> 8) & 255, color & 255);
+  }
+  hitStop(ms = 50) {
+    // 짧은 시간 정지 → 타격감. Task #9(Polish)에서 세부 튜닝
+    this.scene.physics && (this.scene.physics.world.isPaused = true);
+    this.scene.time.delayedCall(ms, () => {
+      this.scene.physics && (this.scene.physics.world.isPaused = false);
+    });
+  }
+  slowMotion(scale = 0.3, ms = 300) {
+    this.scene.time.timeScale = scale;
+    this.scene.tweens.timeScale = scale;
+    setTimeout(() => { this.scene.time.timeScale = 1; this.scene.tweens.timeScale = 1; }, ms);
+  }
+}
+
+
+// ===== js/managers/MagicManager.js =====
+// ============================================================
+// MagicManager — 발사체 풀 + 이동/충돌 + 마법별 행동(폭발/둔화/연쇄)
+// 모든 특수 행동은 MagicData 필드 유무로 자동 분기 → 새 마법 코드수정 불필요
+// ============================================================
+class MagicManager {
+  constructor(scene) {
+    this.scene = scene;
+    this.pool = [];
+    this.dmgTexts = [];
+  }
+
+  cast(magicData, x, y, dx, dy, opts = {}) {
+    const p = this._get();
+    const mod = GameState.magicMod(magicData.__key);   // 마법별 연마 배율
+    const mul = ((GameState.run && GameState.run.stats.damageMul) || 1) * mod.dmgMul;
+    p.fire(x, y, dx, dy, magicData.projectile, mul, {
+      ...opts, magicKey: magicData.__key, magicCharge: magicData.charge,
+      modPierceAdd: mod.pierceAdd,
+    });
+    p._magic = magicData;
+    p._mods = mod;
+    // 머즐 파티클 (마법 색상)
+    this._emit(x + dx * 26, y + dy * 26, opts.charged ? 8 : 4, magicData.__key);
+  }
+
+  update(dt) {
+    const enemies = this.scene.enemyManager.enemies;
+    for (const p of this.pool) {
+      if (!p.active) continue;
+      p.step(dt);
+      if (!p.active) continue;
+
+      for (const e of enemies) {
+        if (!e.alive || p.hitSet.has(e)) continue;
+        const d = Math.hypot(e.x - p.x, (e.y - 24) - p.y);
+        if (d < e.radius + p.radius) {
+          this._onHit(p, e);
+          if (!p.active) break;
+        }
+      }
+    }
+
+    // 데미지 텍스트 (수동 애니메이션)
+    for (const t of this.dmgTexts) {
+      if (!t.obj.active) continue;
+      t.life -= dt;
+      t.obj.y += t.vy * dt;
+      t.obj.setAlpha(Math.max(0, t.life / t.maxLife));
+      if (t.life <= 0) t.obj.setActive(false).setVisible(false);
+    }
+  }
+
+  _onHit(p, enemy) {
+    const magic = p._magic;
+    const feel = magic.feel;
+    const charged = p.charged;
+    const dir = { x: p.vx, y: p.vy };
+    const pd = Math.hypot(dir.x, dir.y) || 1;
+
+    // 직격 대상 피해 (항상) — 치명타 판정
+    const hit = this._crit(p.damage);
+    this._dealDamage(enemy, hit.dmg, p.x, p.y, charged || hit.crit, dir.x / pd, dir.y / pd);
+    this._showDamage(p.x, p.y - 16, Math.round(hit.dmg), charged, hit.crit);
+    if (hit.crit) SoundManager.crit();
+    SoundManager[feel.sndHit] && SoundManager[feel.sndHit]();
+
+    if (magic.explosion) {
+      // 폭발형: 폭발 연출이 모든 시각효과를 담당 (기본 타격 파티클/셰이크 생략)
+      this._explode(p.x, p.y, magic.explosion, feel, charged, magic.charge, p._mods);
+    } else {
+      // 비폭발형: 기본 타격 이펙트
+      this._emit(p.x, p.y, charged ? 16 : feel.hitParticles, magic.__key);
+      const shakeAmt = charged ? 0.006 : 0.0022;
+      this.scene.gameFeel.shake(shakeAmt, charged ? 130 : 70);
+      if (charged) { this.scene.gameFeel.hitStop(45); this.scene.gameFeel.flash(0xffffff, 60); }
+
+      // 둔화(얼음) 마법: 명중 지점에 서리 원이 퍼졌다 사라짐 (얼리는 느낌 강조)
+      if (magic.slow) {
+        const frost = this.scene.add.circle(p.x, p.y, 10, 0x8fe3ff, 0.45).setDepth(24);
+        if (this.scene.worldRoot) this.scene.worldRoot.add(frost);
+        this.scene.tweens.add({ targets: frost, radius: 30, alpha: 0, duration: 280,
+          ease: 'Cubic.Out', onComplete: () => frost.destroy() });
+      }
+    }
+
+    // 기타 마법별 행동
+    if (magic.slow) this._applySlow(enemy, magic.slow);
+    if (magic.chain) this._chain(enemy, p.damage, magic.chain, feel, p.hitSet, charged, magic.charge, p._mods);
+
+    // 관통 처리
+    p.hitSet.add(enemy);
+    if (p.pierceLeft > 0) { p.pierceLeft--; } else { p.despawn(); }
+  }
+
+  _dealDamage(enemy, dmg, fromX, fromY, charged, nx, ny) {
+    enemy.takeDamage(dmg, fromX, fromY, charged, nx, ny);
+  }
+
+  // ---- 치명타 판정 (UpgradeData의 critChance/critMul) ----
+  _crit(dmg) {
+    const s = GameState.run && GameState.run.stats;
+    if (s && Math.random() < s.critChance) return { dmg: dmg * s.critMul, crit: true };
+    return { dmg, crit: false };
+  }
+
+  // 웨이브 종료 시 남은 발사체 정리 (강화 선택 중 화면 정지 대비)
+  clearProjectiles() {
+    for (const p of this.pool) if (p.active) p.despawn();
+  }
+
+  // ---- 폭발: 범위 내 모든 적에게 피해 ----
+  _explode(x, y, exp, feel, charged, charge, mods) {
+    mods = mods || { dmgMul: 1, radiusMul: 1 };
+    const rMul = (charged ? ((charge && charge.radiusMul) || 1.5) : 1) * (mods.radiusMul || 1);
+    const dMul = (charged ? ((charge && charge.dmgMul) || 1.5) : 1);
+    const statMul = ((GameState.run && GameState.run.stats.damageMul) || 1) * (mods.dmgMul || 1);
+    const R = exp.radius * rMul;
+    const sc = this.scene;
+
+    // (1) 폭발 범위를 보여주는 채운 원 — 실제 R 크기로 나타났다 사라짐
+    //     "여기까지 범위"가 눈에 보이도록 반경 R로 시작
+    const area = sc.add.circle(x, y, R, 0xff7a2b, 0.35).setDepth(26);
+    if (sc.worldRoot) sc.worldRoot.add(area);
+    sc.tweens.add({ targets: area, alpha: 0, scale: 1.05, duration: 260, ease: 'Cubic.Out',
+      onComplete: () => area.destroy() });
+
+    // (2) 충격파 링 — 얇은 테두리가 R까지 확장 (범위 경계 강조)
+    const ring = sc.add.circle(x, y, R * 0.4, 0xffd23f, 0).setStrokeStyle(3, 0xffd23f, 0.8).setDepth(27);
+    if (sc.worldRoot) sc.worldRoot.add(ring);
+    sc.tweens.add({ targets: ring, radius: R, alpha: 0, duration: 300, ease: 'Cubic.Out',
+      onComplete: () => ring.destroy() });
+
+    // (3) 불꽃 파편 (톤다운: 개수 축소)
+    sc.fxExplosion.emitParticleAt(x, y, charged ? 24 : 16);
+
+    // (4) 셰이크 (톤다운)
+    sc.gameFeel.shake(charged ? 0.008 : 0.005, charged ? 140 : 100);
+    if (charged) sc.gameFeel.hitStop(30);
+
+    // (5) 범위 피해 + 폭심에서 바깥으로 넉백 (강화·치명타 반영)
+    const dmg = exp.damage * dMul * statMul;
+    for (const e of sc.enemyManager.enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.x - x, (e.y - 24) - y);
+      if (d < R + e.radius) {
+        const dx = e.x - x, dy = (e.y - 24) - y, dd = Math.hypot(dx, dy) || 1;
+        const falloff = 0.6 + 0.4 * (1 - Math.min(1, d / R));
+        const hit = this._crit(dmg * falloff);
+        e.takeDamage(hit.dmg, x, y, false, dx / dd, dy / dd);
+        if (hit.crit) this._showDamage(e.x, e.y - 30, Math.round(hit.dmg), false, true);
+      }
+    }
+  }
+
+  // ---- 둔화: 적 이동속도 배율 ----
+  _applySlow(enemy, slow) {
+    enemy.applySlow(slow.factor, slow.duration);
+  }
+
+  // ---- 연쇄: 가장 가까운 미타격 적으로 점프 ----
+  _chain(fromEnemy, baseDmg, chain, feel, hitSet, charged, charge, mods) {
+    const jumps = chain.jumps + (charged ? ((charge && charge.jumpsAdd) || 0) : 0)
+                  + ((mods && mods.jumpsAdd) || 0);
+    const range = chain.range * (charged ? ((charge && charge.rangeMul) || 1) : 1);
+    let current = fromEnemy;
+    let dmg = baseDmg * chain.falloff;
+    const chained = new Set([fromEnemy]);
+
+    for (let j = 0; j < jumps; j++) {
+      let best = null, bd = range;
+      for (const e of this.scene.enemyManager.enemies) {
+        if (!e.alive || chained.has(e)) continue;
+        const d = Math.hypot(e.x - current.x, e.y - current.y);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (!best) break;
+
+      // 번개 줄기 (선 그리기 후 페이드)
+      this._lightningArc(current.x, current.y - 20, best.x, best.y - 20, feel.tint[0]);
+      const dx = best.x - current.x, dy = best.y - current.y, dd = Math.hypot(dx, dy) || 1;
+      const hit = this._crit(dmg);
+      best.takeDamage(hit.dmg, current.x, current.y, false, dx / dd, dy / dd);
+      if (hit.crit) this._showDamage(best.x, best.y - 30, Math.round(hit.dmg), false, true);
+      this._emit(best.x, best.y - 20, 6, 'chainLightning');
+      SoundManager.boltHit && SoundManager.boltHit();
+
+      chained.add(best);
+      current = best;
+      dmg *= chain.falloff;
+    }
+  }
+
+  _lightningArc(x1, y1, x2, y2, color) {
+    const g = this.scene.add.graphics().setDepth(23);
+    if (this.scene.worldRoot) this.scene.worldRoot.add(g);
+    g.lineStyle(3, color, 0.9);
+    // 지그재그
+    const segs = 5;
+    g.beginPath(); g.moveTo(x1, y1);
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const mx = x1 + (x2 - x1) * t + (Math.random() - 0.5) * 24;
+      const my = y1 + (y2 - y1) * t + (Math.random() - 0.5) * 24;
+      g.lineTo(mx, my);
+    }
+    g.lineTo(x2, y2); g.strokePath();
+    this.scene.tweens.add({ targets: g, alpha: 0, duration: 180,
+      onComplete: () => g.destroy() });
+  }
+
+  _emit(x, y, count, emitterKey) {
+    const em = (emitterKey && this.scene.fxEmitters[emitterKey]) || this.scene.fxBurst;
+    em.emitParticleAt(x, y, count);
+  }
+
+  _get() {
+    for (const p of this.pool) if (!p.active) return p;
+    const np = new Projectile(this.scene);
+    if (this.scene.worldRoot) this.scene.worldRoot.add(np);
+    this.pool.push(np);
+    return np;
+  }
+
+  _showDamage(x, y, val, charged, crit = false) {
+    let d = this.dmgTexts.find(o => !o.obj.active);
+    if (!d) {
+      const obj = this.scene.add.text(0, 0, '', {
+        fontFamily: 'monospace', fontSize: '18px', color: '#ffe9a8',
+        stroke: '#2b2140', strokeThickness: 4, fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(30).setResolution(2);
+      if (this.scene.worldRoot) this.scene.worldRoot.add(obj);
+      d = { obj, life: 0, maxLife: 0.48, vy: -70 };
+      this.dmgTexts.push(d);
+    }
+    const big = charged || crit;
+    d.obj.setText(crit ? `${val}!` : String(val)).setPosition(x, y).setAlpha(1)
+      .setActive(true).setVisible(true)
+      .setFontSize(big ? 30 : 18)
+      .setColor(crit ? '#ffd23f' : (charged ? '#ff7e7e' : '#ffe9a8'));
+    d.life = d.maxLife = big ? 0.62 : 0.48;
+    d.vy = big ? -95 : -70;
+  }
+}
+
+
+// ===== js/managers/EnemyManager.js =====
+// ============================================================
+// EnemyManager — 적 목록 관리 + 최근접 탐색 + 처치 집계
+// ============================================================
+class EnemyManager {
+  constructor(scene) {
+    this.scene = scene;
+    this.enemies = [];
+    this.killCount = 0;
+  }
+
+  spawnGoblin(x, y, mods = {}) {
+    const g = new GoblinEnemy(this.scene, x, y, mods);
+    if (this.scene.worldRoot) this.scene.worldRoot.add(g);
+    this.enemies.push(g);
+    // 등장 연출: 작게 튀어나옴
+    g.setScale(0.2);
+    this.scene.tweens.add({ targets: g, scaleX: 1, scaleY: 1, duration: 260, ease: 'Back.Out' });
+    return g;
+  }
+
+  spawnBoss(x, y) {
+    const b = new BossGoblinKing(this.scene, x, y);
+    if (this.scene.worldRoot) this.scene.worldRoot.add(b);
+    this.enemies.push(b);
+    b.setScale(0.1);
+    this.scene.tweens.add({ targets: b, scaleX: 1, scaleY: 1, duration: 500, ease: 'Back.Out' });
+    return b;
+  }
+
+  // 하이브리드 조준용 최근접 (살아있는 적만)
+  nearest(x, y, maxDist = Infinity) {
+    let best = null, bd = maxDist;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.x - x, e.y - y);
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+
+  update(dt, player) {
+    for (const e of this.enemies) e.update(dt, player);
+    // 제거된 적 정리
+    this.enemies = this.enemies.filter(e => !e.destroyed);
+  }
+
+  get aliveCount() { return this.enemies.filter(e => e.alive).length; }
+  // 보스 제외 부하 수 (소환 상한 판단용)
+  get minionCount() { return this.enemies.filter(e => e.alive && e.data0.kind !== 'boss').length; }
+}
+
+
+// ===== js/managers/WaveManager.js =====
+// ============================================================
+// WaveManager — 웨이브 진행 / 스폰 스케줄 / 보스 트리거 [Task #7]
+//
+// 흐름:
+//   startWave(n) → 배너 → 스폰 스케줄(batch/interval/pattern)
+//   → 전멸 → onWaveClear → (강화 3택: GameScene) → 카운트다운 → 다음 웨이브
+//   웨이브 10 = 보스전 (보스 처치가 종료 조건, 부하는 무시)
+// ============================================================
+class WaveManager {
+  constructor(scene) {
+    this.scene = scene;
+    this.wave = 0;
+    this.def = null;
+    this.boss = null;
+    this._reset();
+  }
+
+  _reset() {
+    this.spawned = 0;
+    this.spawnT = 0;
+    this.batchIdx = 0;
+    this.finished = false;
+    this.bossSpawned = false;
+  }
+
+  get totalWaves() { return WaveData.waves.length; }
+  get isBossWave() { return !!(this.def && this.def.boss); }
+
+  startWave(n) {
+    this.wave = n;
+    if (GameState.run) GameState.run.wave = n;
+    this.def = WaveData.waves[n - 1];
+    this._reset();
+    this.spawnT = WaveData.firstSpawnDelay;
+
+    const hud = this.scene.hud;
+    hud.setWaveNum(n, this.totalWaves);
+
+    if (this.isBossWave) {
+      hud.announce('B O S S', EnemyData.goblinKing.name, 0xff6b6b);
+      SoundManager.bossRoar();
+      this.scene.gameFeel.shake(0.006, 400);
+      this.spawnT = 1.6;
+    } else {
+      hud.announce(`WAVE ${n}`, this._patternHint(this.def.pattern));
+      SoundManager.waveStart();
+    }
+    this._updateRemain();
+    this.scene.phase = Phase.FIGHTING;
+  }
+
+  // 패턴 힌트: 어떤 마법이 유리한지 판단하는 재미를 살짝 유도
+  _patternHint(p) {
+    return {
+      scatter: '적들이 흩어져 온다',
+      ring:    '포위당했다!',
+      cluster: '적들이 뭉쳐서 온다',
+      stream:  '한 방향에서 몰려온다',
+      mixed:   '적들이 몰려온다',
+    }[p] || '';
+  }
+
+  update(dt) {
+    if (this.scene.phase !== Phase.FIGHTING || !this.def) return;
+
+    if (this.isBossWave) {
+      if (!this.bossSpawned) {
+        this.spawnT -= dt;
+        if (this.spawnT <= 0) this._spawnBoss();
+      }
+      return; // 종료는 GameScene.onEnemyKilled(보스 처치)에서
+    }
+
+    // 일반 웨이브: 배치 스폰
+    if (this.spawned < this.def.count) {
+      this.spawnT -= dt;
+      if (this.spawnT <= 0) {
+        this.spawnT = this.def.interval;
+        const n = Math.min(this.def.batch, this.def.count - this.spawned);
+        this._spawnBatch(n);
+      }
+    } else if (!this.finished && this.scene.enemyManager.aliveCount === 0) {
+      // 웨이브 종료
+      this.finished = true;
+      this.scene.onWaveCleared(this.wave);
+    }
+  }
+
+  notifyKill() { this._updateRemain(); }
+
+  _updateRemain() {
+    if (this.isBossWave) { this.scene.hud.setRemain(-1); return; }
+    const remain = (this.def.count - this.spawned) + this.scene.enemyManager.aliveCount;
+    this.scene.hud.setRemain(remain);
+  }
+
+  // ---------- 스폰 ----------
+  _spawnBatch(n) {
+    let pattern = this.def.pattern;
+    if (pattern === 'mixed') pattern = (this.batchIdx % 2 === 0) ? 'cluster' : 'scatter';
+    this.batchIdx++;
+
+    const mods = WaveData.mods(this.wave);
+    const positions = this._positions(pattern, n);
+    for (const pos of positions) {
+      this.scene.enemyManager.spawnGoblin(pos.x, pos.y, mods);
+      this.spawned++;
+    }
+    this._updateRemain();
+  }
+
+  _positions(pattern, n) {
+    const P = this.scene.player;
+    const D = WaveData.spawnDist;
+    const out = [];
+    const rnd = Phaser.Math.FloatBetween;
+
+    if (pattern === 'ring') {
+      const a0 = Math.random() * Math.PI * 2;
+      for (let i = 0; i < n; i++) {
+        const a = a0 + (Math.PI * 2 * i) / n;
+        out.push(this._clampPos(P.x + Math.cos(a) * 340, P.y + Math.sin(a) * 340));
+      }
+    } else if (pattern === 'cluster') {
+      const a = Math.random() * Math.PI * 2;
+      const cx = P.x + Math.cos(a) * 400, cy = P.y + Math.sin(a) * 400;
+      for (let i = 0; i < n; i++) {
+        out.push(this._clampPos(cx + rnd(-80, 80), cy + rnd(-80, 80)));
+      }
+    } else if (pattern === 'stream') {
+      const a = Math.random() * Math.PI * 2;
+      for (let i = 0; i < n; i++) {
+        const d = 330 + i * 75; // 같은 방향으로 일렬 — 아이스 스피어 각
+        out.push(this._clampPos(P.x + Math.cos(a) * d + rnd(-20, 20),
+                                P.y + Math.sin(a) * d + rnd(-20, 20)));
+      }
+    } else { // scatter
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = rnd(D.min, D.max);
+        out.push(this._clampPos(P.x + Math.cos(a) * d, P.y + Math.sin(a) * d));
+      }
+    }
+
+    // 플레이어와 최소 안전거리 보장 (경계 클램프로 가까워진 경우 밀어냄)
+    for (const p of out) {
+      const dx = p.x - P.x, dy = p.y - P.y;
+      const d = Math.hypot(dx, dy);
+      if (d < D.safe && d > 0.01) {
+        p.x = P.x + (dx / d) * D.safe;
+        p.y = P.y + (dy / d) * D.safe;
+        const c = this._clampPos(p.x, p.y);
+        p.x = c.x; p.y = c.y;
+      }
+    }
+    return out;
+  }
+
+  _clampPos(x, y) {
+    const F = BalanceData.field, m = 40;
+    return { x: Phaser.Math.Clamp(x, m, F.width - m), y: Phaser.Math.Clamp(y, m, F.height - m) };
+  }
+
+  // ---------- 보스 ----------
+  _spawnBoss() {
+    this.bossSpawned = true;
+    const P = this.scene.player;
+    const pos = this._clampPos(P.x, P.y - 460);
+    this.boss = this.scene.enemyManager.spawnBoss(pos.x, pos.y);
+    this.scene.hud.showBossBar(EnemyData.goblinKing.name);
+    this.scene.gameFeel.shake(0.008, 300);
+    SoundManager.bossGrowl();
+  }
+
+  // 보스가 부하 소환 요청 (BossGoblinKing._ai에서 호출)
+  bossSummon(boss) {
+    const D = boss.data0;
+    const room = D.summonCap - this.scene.enemyManager.minionCount;
+    const n = Math.min(D.summonCount, Math.max(0, room));
+    if (n <= 0) return;
+    const mods = WaveData.mods(this.totalWaves);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const p = this._clampPos(boss.x + Math.cos(a) * 120, boss.y + Math.sin(a) * 120);
+      this.scene.enemyManager.spawnGoblin(p.x, p.y, mods);
+      this.scene.fxBurst.emitParticleAt(p.x, p.y, 6);
+    }
+    SoundManager.summon();
+  }
+}
+
+
+// ===== js/managers/SkillManager.js =====
+// ============================================================
+// SkillManager — 강화 선택/적용 [Task #7: 레벨 + 진화 조건]
+//
+// pickThree(): 최고 레벨이 아닌 강화 중 3개 무작위 제시
+// apply(u):    레벨 +1 적용. 최고 레벨 도달 + evolution 정의 시
+//              → "각성" 보너스 즉시 적용 + pendingEvolutions 기록
+//              (진짜 진화 마법 교체는 다음 Task에서 이 기록을 소비)
+// ============================================================
+class SkillManager {
+  constructor(scene) { this.scene = scene; }
+
+  levelOf(id) {
+    return (GameState.run && GameState.run.upgradeLevels[id]) || 0;
+  }
+
+  available() {
+    const book = this.scene.player && this.scene.player.magicBook;
+    return UpgradeData.list.filter(u => {
+      if (this.levelOf(u.id) >= u.maxLevel) return false;
+      if (!book) return !u.learn && !u.magicKey ? true : true;
+      // 마법 습득: 아직 없는 마법만
+      if (u.learn) return !book.owns(u.magicKey);
+      // 마법 연마: 보유한 마법만
+      if (u.magicKey) return book.owns(u.magicKey);
+      return true; // 공용 스탯
+    });
+  }
+
+  pickThree() {
+    const pool = this.available();
+    const picks = Phaser.Utils.Array.Shuffle([...pool]).slice(0, 3);
+    // 습득 가능한 마법이 있으면 최소 1장은 습득 카드가 뜨도록 (성장 체감)
+    const learnable = pool.filter(u => u.learn);
+    if (learnable.length && !picks.some(u => u.learn)) {
+      picks[picks.length - 1] = Phaser.Utils.Array.GetRandom(learnable);
+    }
+    return picks;
+  }
+
+  // 선택 적용. 반환: { level, awakened } — UI 연출용
+  apply(upgrade) {
+    const run = GameState.run;
+    const lv = this.levelOf(upgrade.id) + 1;
+    run.upgradeLevels[upgrade.id] = lv;
+    run.upgrades.push(upgrade.id);
+    upgrade.apply(run);
+
+    let awakened = false;
+    if (lv === upgrade.maxLevel && upgrade.evolution) {
+      awakened = true;
+      if (upgrade.evolution.bonus) upgrade.evolution.bonus(run);
+      run.pendingEvolutions.push(upgrade.evolution.id);
+    }
+    return { level: lv, awakened };
+  }
+}
+
+
+// ===== js/ui/VirtualJoystick.js =====
+// ============================================================
+// VirtualJoystick — 플로팅 조이스틱 [Task #3]
+// - 화면 아무 곳이나 터치한 지점에 스틱 생성 (엄지 위치 자유)
+// - 아날로그 입력: 기울인 정도(0~1)에 따라 이동 속도 조절
+// - 손가락을 떼면 즉시 중립 + 스틱 페이드아웃
+// - 멀티터치 안전: 스틱을 생성한 포인터만 추적
+// ============================================================
+class VirtualJoystick {
+  constructor(scene) {
+    this.scene = scene;
+    this.vector = { x: 0, y: 0 };   // 정규화된 입력 (길이 0~1)
+    this.pointerId = null;
+    this.baseX = 0; this.baseY = 0;
+
+    this.MAX_DIST = 52;   // 노브 최대 거리(px)
+    this.DEAD_ZONE = 8;   // 데드존(px)
+
+    // 비주얼 (화면 고정)
+    this.gfx = scene.add.container(0, 0).setScrollFactor(0).setDepth(90).setAlpha(0);
+    const base = scene.add.circle(0, 0, 56, 0xffffff, 0.08)
+      .setStrokeStyle(2, 0xffffff, 0.25);
+    this.knob = scene.add.circle(0, 0, 24, 0xffffff, 0.22)
+      .setStrokeStyle(2, 0xffffff, 0.4);
+    this.gfx.add([base, this.knob]);
+
+    scene.input.addPointer(2); // 멀티터치 허용
+
+    scene.input.on('pointerdown', (p) => {
+      if (this.pointerId !== null) return;          // 이미 다른 손가락이 사용 중
+      if (p.event && p.event.uiHandled) return;     // UI 버튼이 소비한 입력 무시
+      this.pointerId = p.id;
+      this.baseX = p.x; this.baseY = p.y;
+      this.gfx.setPosition(p.x, p.y);
+      this.knob.setPosition(0, 0);
+      this.scene.tweens.killTweensOf(this.gfx);
+      this.gfx.setAlpha(1);
+    });
+
+    scene.input.on('pointermove', (p) => {
+      if (p.id !== this.pointerId) return;
+      this._updateVector(p.x, p.y);
+    });
+
+    const release = (p) => {
+      if (p.id !== this.pointerId) return;
+      this.pointerId = null;
+      this.vector.x = 0; this.vector.y = 0;         // 즉시 중립
+      this.scene.tweens.add({ targets: this.gfx, alpha: 0, duration: 150 });
+    };
+    scene.input.on('pointerup', release);
+    scene.input.on('pointerupoutside', release);
+  }
+
+  _updateVector(px, py) {
+    let dx = px - this.baseX, dy = py - this.baseY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < this.DEAD_ZONE) {
+      this.vector.x = 0; this.vector.y = 0;
+      this.knob.setPosition(dx, dy);
+      return;
+    }
+    const clamped = Math.min(dist, this.MAX_DIST);
+    const nx = dx / dist, ny = dy / dist;
+    // 아날로그 강도: 데드존~최대거리 구간을 0~1로 매핑
+    const power = (clamped - this.DEAD_ZONE) / (this.MAX_DIST - this.DEAD_ZONE);
+    this.vector.x = nx * power;
+    this.vector.y = ny * power;
+    this.knob.setPosition(nx * clamped, ny * clamped);
+  }
+
+  get active() { return this.pointerId !== null; }
+}
+
+
+// ===== js/ui/AttackButton.js =====
+// ============================================================
+// AttackButton — 오른손 공격 버튼 [Hybrid Aim + Charge]
+//  짧게 탭(<HOLD, 안 움직임) → onTap()          자동 발사(약)
+//  꾹 누름/드래그            → onAimUpdate(dir)  조준 + 차지 게이지 상승
+//  놓음                      → onFire(dir, power) 차지량에 비례한 강샷
+// ============================================================
+class AttackButton {
+  constructor(scene, callbacks) {
+    this.scene = scene;
+    this.cb = callbacks;
+    this.pointerId = null;
+    this.aiming = false;
+    this.dir = null;
+    this.startX = 0; this.startY = 0;
+    this.t0 = 0;
+    this.charge = 0;             // 0~1
+
+    this.HOLD_MS = 180;          // 이 시간 넘겨 누르면 조준/차지 모드
+    this.DRAG_PX = 22;           // 탭 허용 흔들림(이내면 탭). 오판정 방지 위해 넉넉히
+    this.AIM_DEAD = 16;
+    this.CHARGE_MS = 650;        // 완충까지 시간
+
+    this.BOTTOM_MARGIN = 150;    // 홈 인디케이터/브라우저 하단 여백 확보
+    const x = scene.scale.width - 84;
+    const y = scene.scale.height - this.BOTTOM_MARGIN;
+    this.root = scene.add.container(x, y).setScrollFactor(0).setDepth(95);
+    this.ring = scene.add.circle(0, 0, 46, 0xffffff, 0.10).setStrokeStyle(3, 0xffe9a8, 0.5);
+    this.chargeRing = scene.add.arc(0, 0, 46, 0, 0, false, 0xff9ec6, 0).setStrokeStyle(5, 0xff9ec6, 1);
+    this.icon = scene.add.image(0, 0, 'missile').setScale(3.4);
+    this.root.add([this.ring, this.chargeRing, this.icon]);
+    scene.tweens.add({ targets: this.icon, angle: 360, duration: 6000, repeat: -1 });
+
+    this.zone = scene.add.circle(x, y, 62, 0xffffff, 0.001)
+      .setScrollFactor(0).setDepth(96).setInteractive();
+
+    this.uiObjects = [this.root, this.zone];   // UI 카메라 등록용
+
+    this.zone.on('pointerdown', (p) => {
+      if (this.pointerId !== null) return;
+      if (p.event) p.event.uiHandled = true;
+      this.pointerId = p.id;
+      this.startX = p.x; this.startY = p.y;
+      this.t0 = scene.time.now;
+      this.charge = 0;
+      this.root.setScale(0.9);
+    });
+
+    scene.input.on('pointermove', (p) => {
+      if (p.id !== this.pointerId) return;
+      const dx = p.x - this.startX, dy = p.y - this.startY;
+      const dist = Math.hypot(dx, dy);
+      if (!this.aiming && dist > this.DRAG_PX) this.aiming = true;
+      if (this.aiming) {
+        this.dir = dist > this.AIM_DEAD ? { x: dx / dist, y: dy / dist } : null;
+        this.cb.onAimUpdate(this.dir);
+      }
+    });
+
+    const release = (p) => {
+      if (p.id !== this.pointerId) return;
+      this.root.setScale(1);
+      this.chargeRing.setEndAngle(0);
+      const heldMs = scene.time.now - this.t0;
+
+      if (this.aiming) {
+        // 조준(수동): 차지량 반영
+        const power = 1 + this.charge;               // 1 ~ 2
+        this.cb.onFire(this.dir, power, this.charge >= 0.6);
+      } else if (heldMs > this.HOLD_MS) {
+        // 제자리 홀드(움직이지 않고 꾹): 자동 방향 강샷
+        const power = 1 + this.charge;
+        this.cb.onFire(null, power, this.charge >= 0.6);
+      } else {
+        // 짧은 탭: 자동 발사(약)
+        this.cb.onTap();
+      }
+      this.pointerId = null;
+      this.aiming = false;
+      this.dir = null;
+      this.charge = 0;
+    };
+    scene.input.on('pointerup', release);
+    scene.input.on('pointerupoutside', release);
+  }
+
+  // 화면 크기 변동 시 우하단 재배치
+  reposition(w, h) {
+    const x = w - 84, y = h - this.BOTTOM_MARGIN;
+    this.root.setPosition(x, y);
+    this.zone.setPosition(x, y);
+  }
+
+  update() {
+    if (this.pointerId === null) return;
+    const heldMs = this.scene.time.now - this.t0;
+
+    // HOLD 넘기면 조준 모드로 진입(제자리 홀드 포함)
+    if (!this.aiming && heldMs > this.HOLD_MS) {
+      this.aiming = true;
+      this.cb.onAimUpdate(this.dir);
+    }
+    // 차지 게이지 상승 (조준 모드에서만)
+    if (this.aiming) {
+      this.charge = Math.min(1, (heldMs - this.HOLD_MS) / this.CHARGE_MS);
+      this.chargeRing.setEndAngle(360 * this.charge);
+      const full = this.charge >= 1;
+      this.chargeRing.setStrokeStyle(5, full ? 0xffe9a8 : 0xff9ec6, 1);
+      this.icon.setScale(3.4 + this.charge * 0.9);
+    }
+  }
+}
+
+
+// ===== js/ui/MagicSelector.js =====
+// ============================================================
+// MagicSelector — 마법 전환 UI [Task #7: 습득제 반영]
+// 보유한 마법만 하단 아이콘으로 표시. 습득 시 rebuild()로 재구성.
+// uiObjects: UI 카메라 등록용(메인 카메라가 무시하도록 GameScene이 사용).
+// ============================================================
+class MagicSelector {
+  constructor(scene, magicBook, onChange) {
+    this.scene = scene;
+    this.book = magicBook;
+    this.onChange = onChange;
+    this.icons = { magicMissile: 'missile', fireball: 'fireball', iceSpear: 'icespear', chainLightning: 'bolt' };
+    this.buttons = [];
+    this.uiObjects = [];
+    this.build();
+  }
+
+  build() {
+    const scene = this.scene;
+    const keys = this.book.keys;
+    const n = keys.length;
+    const gap = 64;
+    const startX = scene.scale.width / 2 - (gap * (n - 1)) / 2;
+    const y = scene.scale.height - 72;   // 홈 인디케이터 여백 확보 (was -44)
+
+    keys.forEach((key, i) => {
+      const x = startX + i * gap;
+      const cont = scene.add.container(x, y).setScrollFactor(0).setDepth(97);
+      const bg = scene.add.circle(0, 0, 26, 0x2a1f45, 0.85).setStrokeStyle(2, 0x6f5aa8, 0.6);
+      const icon = scene.add.image(0, 0, this.icons[key]).setScale(2.4);
+      const num = scene.add.text(0, 20, String(i + 1), {
+        fontFamily: 'monospace', fontSize: '10px', color: '#8f83b5',
+      }).setOrigin(0.5).setResolution(2);
+      cont.add([bg, icon, num]);
+
+      const zone = scene.add.circle(x, y, 30, 0xffffff, 0.001)
+        .setScrollFactor(0).setDepth(98).setInteractive();
+      zone.on('pointerdown', (p) => {
+        if (p.event) p.event.uiHandled = true;
+        this.select(i);
+      });
+
+      this.buttons.push({ cont, bg, icon, key });
+      this.uiObjects.push(cont, zone);
+    });
+
+    // 활성 유지 (재구성 시 현재 활성 마법으로)
+    const activeKey = this.book.active.data.__key;
+    const idx = Math.max(0, keys.indexOf(activeKey));
+    this.select(idx, true);
+  }
+
+  // 마법 습득 후 재구성 (등장 연출: 새 아이콘이 톡 튀어나옴)
+  rebuild() {
+    for (const o of this.uiObjects) if (o && o.destroy) o.destroy();
+    this.buttons = [];
+    this.uiObjects = [];
+    this.build();
+    if (this.scene.registerUI) this.uiObjects.forEach(o => this.scene.registerUI(o));
+    // 새로 습득한(마지막) 아이콘 팝
+    const last = this.buttons[this.buttons.length - 1];
+    if (last) {
+      last.cont.setScale(0.1);
+      this.scene.tweens.add({ targets: last.cont, scaleX: 1, scaleY: 1, duration: 320, ease: 'Back.Out' });
+    }
+  }
+
+  // 화면 크기 변동 시 버튼 재배치 (재구성 없이 위치만 이동)
+  reposition(w, h) {
+    const n = this.buttons.length;
+    const gap = 64;
+    const startX = w / 2 - (gap * (n - 1)) / 2;
+    const y = h - 72;
+    this.buttons.forEach((b, i) => {
+      const x = startX + i * gap;
+      b.cont.setPosition(x, y);
+    });
+    // zone은 uiObjects에 cont와 교차 저장됨: [cont0, zone0, cont1, zone1, ...]
+    for (let i = 0; i < this.buttons.length; i++) {
+      const x = startX + i * gap;
+      const zone = this.uiObjects[i * 2 + 1];
+      if (zone && zone.setPosition) zone.setPosition(x, y);
+    }
+  }
+
+  select(i, silent = false) {
+    this.book.setActive(i);
+    this.buttons.forEach((b, idx) => {
+      const on = idx === i;
+      b.bg.setStrokeStyle(on ? 3 : 2, on ? 0xffe9a8 : 0x6f5aa8, on ? 1 : 0.6);
+      b.bg.setFillStyle(on ? 0x3a2a5a : 0x2a1f45, on ? 0.95 : 0.85);
+      b.cont.setScale(on ? 1.15 : 1);
+      b.icon.setAlpha(on ? 1 : 0.7);
+    });
+    if (!silent && this.onChange) this.onChange(this.book.active);
+  }
+}
+
+
+// ===== js/ui/HUD.js =====
+// ============================================================
+// HUD — 상단 정보 [Task #7 확장]
+//   웨이브 표시 / 남은 적 / HP바 / 처치 수
+//   announce(배너) / countdown(다음 웨이브 카운트) / 보스 HP바 / toast
+// ============================================================
+class HUD extends Phaser.GameObjects.Container {
+  constructor(scene) {
+    super(scene, 0, 0);
+    scene.add.existing(this);
+    this.setScrollFactor(0).setDepth(100);
+    const w = scene.scale.width;
+    const h = scene.scale.height;
+
+    this.waveLabel = scene.add.text(w / 2, 40, '', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#ffe9a8', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.add(this.waveLabel);
+
+    // 남은 적 (웨이브 라벨 아래)
+    this.remainText = scene.add.text(w / 2, 62, '', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#8f83b5',
+    }).setOrigin(0.5);
+    this.add(this.remainText);
+
+    // HP 바 (좌상단, 노치 피해 아래로)
+    this.hpBarBg = scene.add.graphics();
+    this.hpBar = scene.add.graphics();
+    this.hpText = scene.add.text(20, 78, '', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#ffffff',
+    }).setOrigin(0, 0.5);
+    this.add([this.hpBarBg, this.hpBar, this.hpText]);
+
+    // 처치 수 (우상단)
+    this.killText = scene.add.text(w - 20, 78, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#c9f2d0',
+    }).setOrigin(1, 0.5);
+    this.add(this.killText);
+
+    // 보스 HP 바 (필요 시 표시)
+    this.bossName = scene.add.text(w / 2, 100, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#ff9e9e', fontStyle: 'bold',
+    }).setOrigin(0.5).setVisible(false);
+    this.bossBarBg = scene.add.graphics();
+    this.bossBar = scene.add.graphics();
+    this.add([this.bossName, this.bossBarBg, this.bossBar]);
+    this._bossVisible = false;
+
+    // 배너 (웨이브 시작 등 큰 알림)
+    this.banner = scene.add.text(w / 2, h * 0.32, '', {
+      fontFamily: 'monospace', fontSize: '40px', color: '#ffe9a8', fontStyle: 'bold',
+      stroke: '#2b2140', strokeThickness: 8,
+    }).setOrigin(0.5).setAlpha(0);
+    this.bannerSub = scene.add.text(w / 2, h * 0.32 + 42, '', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#c9f2d0',
+      stroke: '#2b2140', strokeThickness: 5,
+    }).setOrigin(0.5).setAlpha(0);
+    this.add([this.banner, this.bannerSub]);
+
+    // 카운트다운 (다음 웨이브 시작)
+    this.countText = scene.add.text(w / 2, h * 0.40, '', {
+      fontFamily: 'monospace', fontSize: '72px', color: '#7ee8ff', fontStyle: 'bold',
+      stroke: '#2b2140', strokeThickness: 10,
+    }).setOrigin(0.5).setAlpha(0);
+    this.add(this.countText);
+
+    // 토스트 (마법 전환 등 작은 알림)
+    this.toastText = scene.add.text(w / 2, h - 92, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#c9f2d0',
+      stroke: '#2b2140', strokeThickness: 4,
+    }).setOrigin(0.5).setAlpha(0);
+    this.add(this.toastText);
+  }
+
+  setWaveNum(n, total) { this.waveLabel.setText(`WAVE ${n} / ${total}`); }
+
+  setRemain(n) {
+    this.remainText.setText(n < 0 ? '' : `남은 적 ${n}`);
+  }
+
+  setHp(hp, max) {
+    const x = 20, y = 72, w = 160, h = 14;
+    this.hpBarBg.clear().fillStyle(0x2b2140, 0.85).fillRect(x - 2, y - 2, w + 4, h + 4);
+    const ratio = Math.max(0, hp / max);
+    const col = ratio > 0.5 ? 0x6fdc8c : (ratio > 0.25 ? 0xffcc55 : 0xff6b6b);
+    this.hpBar.clear().fillStyle(col, 1).fillRect(x, y, w * ratio, h);
+    this.hpText.setText(`HP ${Math.ceil(hp)}/${max}`).setPosition(x + w + 10, y + h / 2);
+  }
+
+  setKills(n) { this.killText.setText(`처치 ${n}`); }
+
+  // ---------- 배너 ----------
+  announce(text, sub = '', color = 0xffe9a8) {
+    this.banner.setText(text).setColor('#' + color.toString(16).padStart(6, '0'));
+    this.bannerSub.setText(sub);
+    const t = [this.banner, this.bannerSub];
+    this.scene.tweens.killTweensOf(t);
+    this.banner.setScale(0.6); this.bannerSub.setScale(0.6);
+    this.banner.setAlpha(0); this.bannerSub.setAlpha(0);
+    this.scene.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 260, ease: 'Back.Out' });
+    this.scene.tweens.add({ targets: t, alpha: 0, duration: 300, delay: 1300 });
+  }
+
+  // ---------- 다음 웨이브 카운트다운 ----------
+  countdown(sec, onDone) {
+    const step = (n) => {
+      if (n <= 0) {
+        this.countText.setText('GO!').setColor('#6fdc8c');
+        SoundManager.countGo();
+        this.scene.tweens.add({ targets: this.countText, alpha: 0, scale: 1.4, duration: 340 });
+        onDone();
+        return;
+      }
+      this.countText.setText(String(n)).setColor('#7ee8ff').setAlpha(1).setScale(1.3);
+      SoundManager.countTick();
+      this.scene.tweens.add({ targets: this.countText, scale: 1, duration: 240, ease: 'Cubic.Out' });
+      this.scene.time.delayedCall(1000, () => step(n - 1));
+    };
+    step(sec);
+  }
+
+  // ---------- 보스 HP ----------
+  showBossBar(name) {
+    this._bossVisible = true;
+    this.bossName.setText(name).setVisible(true);
+    this.setBossHp(1);
+  }
+  setBossHp(ratio) {
+    if (!this._bossVisible) return;
+    const w = 240, h = 10;
+    const x = this.scene.scale.width / 2 - w / 2, y = 112;
+    this.bossBarBg.clear().fillStyle(0x2b2140, 0.85).fillRect(x - 2, y - 2, w + 4, h + 4);
+    this.bossBar.clear().fillStyle(0xff5a5a, 1).fillRect(x, y, w * Math.max(0, ratio), h);
+  }
+  hideBossBar() {
+    this._bossVisible = false;
+    this.bossName.setVisible(false);
+    this.bossBarBg.clear();
+    this.bossBar.clear();
+  }
+
+  // ---------- 토스트 ----------
+  toast(text) {
+    this.toastText.setText(text);
+    this.scene.tweens.killTweensOf(this.toastText);
+    this.toastText.setAlpha(1);
+    this.scene.tweens.add({ targets: this.toastText, alpha: 0, duration: 300, delay: 800 });
+  }
+}
+
+
+// ===== js/ui/Overlays.js =====
+// ============================================================
+// Overlays — 씬 전환 대신 쓰는 오버레이 [Task #7, 입력 버그 수정판]
+//
+// ★ 중요: 카메라가 플레이어를 따라 스크롤되므로, 상호작용(터치) 존은
+//   반드시 "최상위 씬 오브젝트 + setScrollFactor(0) + 화면 절대좌표"로 만든다.
+//   (컨테이너에 중첩하면 스크롤만큼 히트영역이 어긋나 탭이 빗나감)
+//   => MagicSelector와 동일한, 검증된 패턴.
+//
+// 각 오버레이는 만든 오브젝트를 배열에 모아 두었다가 한 번에 destroy.
+// ============================================================
+class Overlays {
+  constructor(scene) {
+    this.scene = scene;
+    this._items = [];   // 현재 열린 오버레이의 모든 오브젝트
+  }
+
+  _add(obj) {
+    this._items.push(obj);
+    if (this.scene.registerUI) this.scene.registerUI(obj); // 메인(줌) 카메라는 무시, UI 카메라만 렌더
+    return obj;
+  }
+  _clear() {
+    for (const o of this._items) {
+      if (o) {
+        try { this.scene.tweens.killTweensOf(o); } catch (e) {}
+        if (o.destroy) o.destroy();
+      }
+    }
+    this._items = [];
+  }
+
+  // 화면 전체를 덮는 딤 + 입력 차단막 (그 아래 UI로 입력이 새지 않게)
+  _dim(baseDepth) {
+    const sc = this.scene;
+    const { width: w, height: h } = sc.scale;
+    const dim = sc.add.rectangle(w / 2, h / 2, w, h, 0x120b1e, 0)
+      .setScrollFactor(0).setDepth(baseDepth).setInteractive();
+    dim.on('pointerdown', (p) => { if (p.event) p.event.uiHandled = true; });
+    this._add(dim);
+    sc.tweens.add({ targets: dim, fillAlpha: 0.72, duration: 220 });
+    return { w, h };
+  }
+
+  // 텍스트/이미지 등 "보이기만 하는" 요소 (화면 고정)
+  _fx(obj, depth) {
+    obj.setScrollFactor(0).setDepth(depth);
+    return this._add(obj);
+  }
+
+  // 버튼: 최상위 인터랙티브 존 + 라벨 (화면 절대좌표)
+  _button(x, y, label, color, depth, onTap) {
+    const sc = this.scene;
+    const bw = 200, bh = 52;
+    const g = sc.add.graphics().setScrollFactor(0).setDepth(depth);
+    g.fillStyle(color, 1).fillRoundedRect(x - bw / 2, y - bh / 2, bw, bh, 14);
+    this._add(g);
+    const txt = this._fx(sc.add.text(x, y, label, {
+      fontFamily: 'monospace', fontSize: '19px', color: '#1a1028', fontStyle: 'bold',
+    }).setOrigin(0.5), depth + 1);
+
+    const zone = sc.add.rectangle(x, y, bw + 16, bh + 12, 0xffffff, 0.001)
+      .setScrollFactor(0).setDepth(depth + 2).setInteractive();
+    zone.on('pointerdown', (p) => {
+      if (p.event) p.event.uiHandled = true;
+      sc.tweens.add({ targets: [g, txt], scaleX: 0.94, scaleY: 0.94, duration: 70, yoyo: true });
+      sc.time.delayedCall(120, onTap);
+    });
+    this._add(zone);
+  }
+
+  // ============================================================
+  // 강화 선택 (마법책)
+  //   choices: UpgradeData 항목 배열 / onPick(choice)
+  // ============================================================
+  showUpgradeChoice(choices, onPick) {
+    const sc = this.scene;
+    this._clear();
+    this._cards = [];              // 이번 선택의 카드 컨테이너 목록
+    const D = 200;                 // 기본 깊이
+    const { w, h } = this._dim(D);
+
+    // 제목
+    const title = this._fx(sc.add.text(w / 2, h * 0.13, '─ 마 법 책 ─', {
+      fontFamily: 'monospace', fontSize: '26px', color: '#ffe9a8', fontStyle: 'bold',
+    }).setOrigin(0.5).setAlpha(0), D + 5);
+    const sub = this._fx(sc.add.text(w / 2, h * 0.13 + 32, '새로운 페이지를 고른다', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#8f83b5',
+    }).setOrigin(0.5).setAlpha(0), D + 5);
+    sc.tweens.add({ targets: [title, sub], alpha: 1, duration: 300, delay: 100 });
+
+    const cardW = Math.min(w - 44, 360), cardH = 106;
+    const startY = h * 0.30, gapY = cardH + 22;
+    let picked = false;
+
+    choices.forEach((u, i) => {
+      const cy = startY + i * gapY;
+      // --- 카드 비주얼 (컨테이너, 화면 고정) ---
+      const card = this._buildCardVisual(u, w / 2, cy, cardW, cardH, D + 2);
+      // 등장: 페이지 펼치기 (scaleX 0→1)
+      card.setScale(0.05, 1).setAlpha(0);
+      sc.tweens.add({ targets: card, scaleX: 1, alpha: 1,
+        duration: 320, delay: 130 + i * 90, ease: 'Back.Out' });
+
+      // --- 터치 존: 최상위, 화면 절대좌표 (★ 어긋남 없음) ---
+      const zone = sc.add.rectangle(w / 2, cy, cardW, cardH, 0xffffff, 0.001)
+        .setScrollFactor(0).setDepth(D + 8).setInteractive();
+      this._add(zone);
+
+      zone.on('pointerdown', (p) => {
+        if (p.event) p.event.uiHandled = true;
+        if (picked) return;
+        picked = true;
+        SoundManager.page();
+
+        // 선택 연출: 나머지 카드는 접히고, 고른 카드는 빛나며 커짐
+        this._cards.forEach((c, j) => {
+          if (j === i) return;
+          sc.tweens.add({ targets: c, scaleX: 0.05, alpha: 0, duration: 200, ease: 'Cubic.In' });
+        });
+        sc.tweens.add({ targets: card, scaleX: 1.06, scaleY: 1.06, duration: 160, ease: 'Cubic.Out' });
+        const glow = sc.add.rectangle(w / 2, cy, cardW, cardH, 0xffffff, 0)
+          .setScrollFactor(0).setDepth(D + 7);
+        this._add(glow);
+        sc.tweens.add({ targets: glow, fillAlpha: 0.85, duration: 130, yoyo: true });
+
+        sc.time.delayedCall(340, () => { this._clear(); onPick(u); });
+      });
+    });
+  }
+
+  // 카드 1장(비주얼만). 반환: 컨테이너
+  _buildCardVisual(u, x, y, cardW, cardH, depth) {
+    const sc = this.scene;
+
+    const lv = sc.skillManager.levelOf(u.id);
+    const nextLv = lv + 1;
+    const awakens = !!(u.evolution && nextLv === u.maxLevel);
+
+    const cont = sc.add.container(x, y).setScrollFactor(0).setDepth(depth);
+    this._add(cont);
+    this._cards.push(cont);
+
+    const g = sc.add.graphics();
+    const border = awakens ? 0xffd23f : 0x6f5aa8;
+    g.fillStyle(0x241a3d, 0.97).fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 12);
+    g.lineStyle(awakens ? 3 : 2, border, awakens ? 1 : 0.8)
+      .strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 12);
+    cont.add(g);
+
+    // 아이콘
+    const iconX = -cardW / 2 + 42;
+    cont.add(sc.add.circle(iconX, 0, 26, 0x1a1028, 1)
+      .setStrokeStyle(2, u.icon.type === 'magic' ? 0x8f83b5 : u.icon.color, 0.9));
+    if (u.icon.type === 'magic') {
+      cont.add(sc.add.image(iconX, 0, u.icon.tex).setScale(3));
+    } else {
+      cont.add(sc.add.text(iconX, 0, u.icon.text, {
+        fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold',
+        color: '#' + u.icon.color.toString(16).padStart(6, '0'),
+      }).setOrigin(0.5));
+    }
+
+    // 이름
+    const tx = -cardW / 2 + 82;
+    cont.add(sc.add.text(tx, -cardH / 2 + 18, u.name, {
+      fontFamily: 'monospace', fontSize: '18px', color: awakens ? '#ffd23f' : '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0, 0.5));
+
+    // 레벨 점
+    const pipG = sc.add.graphics();
+    for (let p = 0; p < u.maxLevel; p++) {
+      const px = tx + p * 16, py = -cardH / 2 + 40;
+      if (p < lv) pipG.fillStyle(0xffe9a8, 1).fillCircle(px, py, 4.5);
+      else if (p === lv) pipG.fillStyle(0x6fdc8c, 1).fillCircle(px, py, 5.5);
+      else pipG.lineStyle(1.5, 0x8f83b5, 0.8).strokeCircle(px, py, 4.5);
+    }
+    cont.add(pipG);
+
+    // 설명
+    const descText = awakens
+      ? `${u.desc}\n★ ${u.evolution.name} 각성! ${u.evolution.bonusDesc.replace('각성: ', '+')}`
+      : u.desc;
+    cont.add(sc.add.text(tx, cardH / 2 - 26, descText, {
+      fontFamily: 'monospace', fontSize: '12px', color: awakens ? '#ffe9a8' : '#c9f2d0',
+      wordWrap: { width: cardW - 108 }, lineSpacing: 3,
+    }).setOrigin(0, 0.5).setResolution(2));
+
+    return cont;
+  }
+
+  // ============================================================
+  // 게임 오버
+  // ============================================================
+  showGameOver(run, onRetry, onTitle) {
+    const sc = this.scene;
+    this._clear();
+    const D = 200;
+    const { w, h } = this._dim(D);
+
+    const msg = this._fx(sc.add.text(w / 2, h * 0.28, '쓰러졌다...', {
+      fontFamily: 'monospace', fontSize: '34px', color: '#ff9ec6', fontStyle: 'bold',
+    }).setOrigin(0.5).setScale(0.5).setAlpha(0), D + 5);
+    sc.tweens.add({ targets: msg, scale: 1, alpha: 1, duration: 350, ease: 'Back.Out', delay: 150 });
+
+    const stats = this._fx(sc.add.text(w / 2, h * 0.42,
+      `도달 웨이브  ${run.wave} / ${WaveData.waves.length}\n처치  ${run.kills}\n점수  ${run.score}`, {
+      fontFamily: 'monospace', fontSize: '17px', color: '#c9f2d0', align: 'center', lineSpacing: 10,
+    }).setOrigin(0.5).setAlpha(0), D + 5);
+    sc.tweens.add({ targets: stats, alpha: 1, duration: 300, delay: 450 });
+
+    sc.time.delayedCall(700, () => {
+      this._button(w / 2, h * 0.60, '다시 도전', 0x6fdc8c, D + 5, onRetry);
+      this._button(w / 2, h * 0.60 + 74, '타이틀로', 0x8f83b5, D + 5, onTitle);
+    });
+    SoundManager.gameOver();
+  }
+
+  // ============================================================
+  // 승리
+  // ============================================================
+  showVictory(run, onRetry, onTitle) {
+    const sc = this.scene;
+    this._clear();
+    const D = 200;
+    const { w, h } = this._dim(D);
+
+    const msg = this._fx(sc.add.text(w / 2, h * 0.24, '스테이지 클리어!', {
+      fontFamily: 'monospace', fontSize: '32px', color: '#ffd23f', fontStyle: 'bold',
+    }).setOrigin(0.5).setScale(0.4).setAlpha(0), D + 5);
+    sc.tweens.add({ targets: msg, scale: 1, alpha: 1, duration: 450, ease: 'Back.Out', delay: 150 });
+
+    const slime = this._fx(sc.add.sprite(w / 2, h * 0.40, 'slime').setOrigin(0.5, 1).setScale(5).setAlpha(0), D + 4);
+    sc.tweens.add({ targets: slime, alpha: 1, duration: 300, delay: 300 });
+    sc.tweens.add({ targets: slime, scaleY: 4.6, scaleX: 5.3, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    const stats = this._fx(sc.add.text(w / 2, h * 0.52,
+      `10 웨이브 완주!\n처치  ${run.kills}     점수  ${run.score}`, {
+      fontFamily: 'monospace', fontSize: '17px', color: '#c9f2d0', align: 'center', lineSpacing: 10,
+    }).setOrigin(0.5).setAlpha(0), D + 5);
+    sc.tweens.add({ targets: stats, alpha: 1, duration: 300, delay: 550 });
+
+    const confetti = this._fx(sc.add.particles(0, 0, 'px', {
+      speed: { min: 120, max: 320 }, angle: { min: 230, max: 310 },
+      scale: { start: 2.5, end: 0 }, lifespan: { min: 500, max: 900 },
+      gravityY: 500, tint: [0xffd23f, 0x6fdc8c, 0x7ee8ff, 0xff9ec6], emitting: false,
+    }), D + 6);
+    const pop = (i) => {
+      confetti.emitParticleAt(w * (0.25 + 0.5 * Math.random()), h * 0.30, 24);
+      SoundManager.waveClear();
+      if (i < 2) sc.time.delayedCall(450, () => pop(i + 1));
+    };
+    sc.time.delayedCall(400, () => pop(0));
+    SoundManager.victory();
+
+    sc.time.delayedCall(900, () => {
+      this._button(w / 2, h * 0.68, '한 번 더', 0x6fdc8c, D + 5, onRetry);
+      this._button(w / 2, h * 0.68 + 74, '타이틀로', 0x8f83b5, D + 5, onTitle);
+    });
+  }
+}
+
+
+// ===== js/scenes/BootScene.js =====
+// ============================================================
+// BootScene — 저장 로드 + 픽셀 텍스처 생성 + 로딩 연출
+// ============================================================
+class BootScene extends Phaser.Scene {
+  constructor() { super('Boot'); }
+
+  create() {
+    // HTML 로딩 오버레이 제거 (게임 캔버스 표시 시작)
+    if (typeof window !== 'undefined') window.__gameStarted = true;
+    if (typeof document !== 'undefined') {
+      const el = document.getElementById('loading');
+      if (el) el.remove();
+    }
+    SaveManager.load();
+    PixelArt.generateAll(this);   // 코드 정의 픽셀아트 → 텍스처
+
+    const { width: w, height: h } = this.scale;
+    this.add.text(w / 2, h / 2 - 30, '슬라임 마법사', {
+      fontFamily: 'monospace', fontSize: '28px', color: '#c9f2d0',
+    }).setOrigin(0.5);
+
+    const barBg = this.add.rectangle(w / 2, h / 2 + 20, 200, 10, 0x3a2a55).setOrigin(0.5);
+    const bar = this.add.rectangle(w / 2 - 100, h / 2 + 20, 0, 10, 0x66dd88).setOrigin(0, 0.5);
+
+    this.tweens.add({
+      targets: bar, width: 200, duration: 500, ease: 'Cubic.Out',
+      onComplete: () => this.scene.start('Title'),
+    });
+  }
+}
+
+
+// ===== js/scenes/TitleScene.js =====
+// ============================================================
+// TitleScene — "작지만 완성도 높은 마법 로그라이트" 첫인상
+// 짧은 루프 애니메이션(정적 이미지 대비 고완성도, 저비용):
+//   · 슬라임 호흡 + 2~3초마다 눈 깜빡임 + 모자 흔들림
+//   · 불/얼음/번개가 슬라임 주위를 공전 (빛나는 궤적 트레일)
+//   · 마법책: 룬 마법진 회전 + 은은한 빛 + 마력 위스프 + 페이지 넘김
+//   · 몸 안 마나 코어 + 마력 광채 + 별가루
+// ★ 이 디테일은 타이틀 전용. 전투 화면은 단순 유지(GPT 방침).
+// ============================================================
+class TitleScene extends Phaser.Scene {
+  constructor() { super('Title'); }
+
+  create() {
+    const { width: w, height: h } = this.scale;
+    const ADD = Phaser.BlendModes.ADD;
+    this.cameras.main.fadeIn(400, 20, 12, 34);
+
+    // 시작 입력을 가장 먼저 연결 (이후 연출 코드에 문제가 있어도 시작은 항상 동작)
+    this.input.once('pointerdown', () => {
+      SoundManager.unlock();
+      SoundManager.waveStart && SoundManager.waveStart();
+      GameState.newRun();
+      this.cameras.main.fadeOut(280, 20, 12, 34);
+      this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Game'));
+    });
+
+    // 연출은 실패해도 시작을 막지 않도록 보호
+    try { this._buildTitle(w, h, ADD); }
+    catch (e) { console.error('title fx error:', e); }
+  }
+
+  _buildTitle(w, h, ADD) {
+
+    // 슬라임/책 중심
+    const cx = w / 2;
+    const slimeY = h * 0.52;
+    const bookY = slimeY + 30;
+
+    // ---------- 배경: 밤하늘 그라데이션 ----------
+    this.add.rectangle(cx, h / 2, w, h, 0x140c22);
+    const grad = this.add.graphics();
+    for (let i = 0; i < 14; i++) {
+      const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+        Phaser.Display.Color.ValueToColor(0x241546),
+        Phaser.Display.Color.ValueToColor(0x120a20), 14, i);
+      grad.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
+      grad.fillRect(0, (h / 14) * i, w, h / 14 + 1);
+    }
+
+    // 중앙 마력 광채 (은은하게 맥동)
+    const aura = this.add.circle(cx, slimeY - 30, 200, 0x6a3fd0, 0.22)
+      .setBlendMode(ADD);
+    this.tweens.add({ targets: aura, scale: 1.14, alpha: 0.30, duration: 2200,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    const aura2 = this.add.circle(cx, slimeY - 30, 120, 0x3fa9d0, 0.18).setBlendMode(ADD);
+    this.tweens.add({ targets: aura2, scale: 1.2, alpha: 0.26, duration: 1700,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut', delay: 300 });
+
+    // ---------- 별 + 별가루 ----------
+    for (let i = 0; i < 60; i++) {
+      const st = this.add.circle(
+        Phaser.Math.Between(0, w), Phaser.Math.Between(0, h * 0.85),
+        Phaser.Math.FloatBetween(0.6, 2.0), 0xfff6d8,
+        Phaser.Math.FloatBetween(0.25, 0.9)).setBlendMode(ADD);
+      this.tweens.add({ targets: st, alpha: 0.1, duration: Phaser.Math.Between(700, 2200),
+        yoyo: true, repeat: -1, delay: Phaser.Math.Between(0, 1800) });
+    }
+    // 떠다니는 별가루 (위로 천천히 상승)
+    this.add.particles(0, 0, 'px', {
+      x: { min: 0, max: w }, y: h + 8,
+      speedY: { min: -18, max: -42 }, speedX: { min: -8, max: 8 },
+      scale: { start: 1.6, end: 0 }, alpha: { start: 0.9, end: 0 },
+      lifespan: { min: 4200, max: 7000 }, frequency: 220,
+      tint: [0xffe9a8, 0xb98cff, 0x8fe3ff, 0xffffff], blendMode: 'ADD',
+    });
+    // 은은한 빛의 흐름 (느리게 가로지르는 광선)
+    for (let i = 0; i < 2; i++) {
+      const beam = this.add.rectangle(-100, h * (0.2 + i * 0.25), 220, 3, 0xb98cff, 0.10)
+        .setAngle(18).setBlendMode(ADD);
+      this.tweens.add({ targets: beam, x: w + 120, duration: 9000 + i * 3000,
+        repeat: -1, delay: i * 4000, ease: 'Sine.InOut' });
+    }
+
+    // ---------- 마법책 (핵심 오브젝트) ----------
+    this._buildBook(cx, bookY);
+
+    // ---------- 마법진 (슬라임 발밑, 마법사 강조) ----------
+    this._buildMagicCircle(cx, slimeY + 4);
+
+    // ---------- 슬라임 마법사 ----------
+    this._buildSlime(cx, slimeY);
+
+    // ---------- 공전 마법 (4속성: 미사일·불·얼음·번개) ----------
+    this.orbs = [];
+    const orbDefs = [
+      { tex: 'missile',  tint: 0x7ee8ff, glow: 0xbfefff, off: 0 },
+      { tex: 'fireball', tint: 0xff6b2b, glow: 0xff8a3d, off: Math.PI / 2 },
+      { tex: 'icespear', tint: 0x8fe3ff, glow: 0xbfefff, off: Math.PI },
+      { tex: 'bolt',     tint: 0xfff27a, glow: 0xd6b3ff, off: (Math.PI * 3) / 2 },
+    ];
+    orbDefs.forEach((d) => {
+      const glow = this.add.circle(0, 0, 16, d.glow, 0.5).setBlendMode(ADD);
+      const spr = this.add.image(0, 0, d.tex).setScale(2.6);
+      const trail = this.add.particles(0, 0, 'px', {
+        follow: spr, scale: { start: 2.0, end: 0 }, alpha: { start: 0.8, end: 0 },
+        lifespan: 420, frequency: 22, tint: d.tint, blendMode: 'ADD',
+        speed: { min: 4, max: 16 },
+      });
+      this.tweens.add({ targets: glow, scale: 1.3, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      this.orbs.push({ glow, spr, trail, off: d.off });
+    });
+    this.orbCx = cx; this.orbCy = slimeY - 42;
+    this.orbRx = 120; this.orbRy = 46;
+
+    // ---------- 타이틀 UI ----------
+    const titleGlow = this.add.text(cx, h * 0.24, '슬라임 마법사', {
+      fontFamily: 'monospace', fontSize: '42px', color: '#b98cff', fontStyle: 'bold',
+    }).setOrigin(0.5).setBlendMode(ADD).setAlpha(0.5).setResolution(2);
+    const title = this.add.text(cx, h * 0.24, '슬라임 마법사', {
+      fontFamily: 'monospace', fontSize: '42px', color: '#e9dcff', fontStyle: 'bold',
+      stroke: '#3a2064', strokeThickness: 6,
+    }).setOrigin(0.5).setResolution(2);
+    const subtitle = this.add.text(cx, h * 0.24 + 38, '· 마법이 자라는 로그라이트 ·', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#9d8fd0',
+    }).setOrigin(0.5).setResolution(2);
+    this.tweens.add({ targets: [title, titleGlow], y: '-=8', duration: 1600,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    this.tweens.add({ targets: titleGlow, alpha: 0.15, duration: 1400, yoyo: true, repeat: -1 });
+
+    const best = GameState.persistent.bestScore;
+    const bestWave = GameState.persistent.bestWave;
+    if (best > 0) {
+      this.add.text(cx, h * 0.66, `최고 기록  ${best}` + (bestWave ? `  ·  WAVE ${bestWave}` : ''), {
+        fontFamily: 'monospace', fontSize: '15px', color: '#9d8fd0',
+      }).setOrigin(0.5).setResolution(2);
+    }
+
+    const tap = this.add.text(cx, h * 0.78, '탭하여 시작', {
+      fontFamily: 'monospace', fontSize: '23px', color: '#ffe9a8', fontStyle: 'bold',
+      stroke: '#3a2064', strokeThickness: 5,
+    }).setOrigin(0.5).setResolution(2);
+    this.tweens.add({ targets: tap, alpha: 0.35, scale: 0.96, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    // 버전 (빌드 구분)
+    this.add.text(w - 10, h - 8, 'v' + (BalanceData.version || '?'), {
+      fontFamily: 'monospace', fontSize: '11px', color: '#5a4d80',
+    }).setOrigin(1, 1);
+  }
+
+  // ---------- 마법책 ----------
+  _buildBook(cx, by) {
+    const ADD = Phaser.BlendModes.ADD;
+
+    // 책 아래 은은한 빛
+    const bookGlow = this.add.circle(cx, by + 4, 96, 0x7ea9ff, 0.22).setBlendMode(ADD);
+    this.tweens.add({ targets: bookGlow, scale: 1.15, alpha: 0.32, duration: 1900,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    const g = this.add.graphics();
+    const pw = 74, ph = 30;   // 반쪽 페이지 폭/높이
+    // 표지(살짝 큰 어두운 받침)
+    g.fillStyle(0x3a2358, 1);
+    g.fillRoundedRect(cx - pw - 8, by - 6, (pw + 8) * 2, ph + 20, 6);
+    // 좌/우 페이지 (원근감: 사다리꼴)
+    g.fillStyle(0xf2e6c8, 1);
+    g.beginPath();
+    g.moveTo(cx - 2, by); g.lineTo(cx - pw, by + 4);
+    g.lineTo(cx - pw + 6, by + ph); g.lineTo(cx - 2, by + ph - 2);
+    g.closePath(); g.fillPath();
+    g.beginPath();
+    g.moveTo(cx + 2, by); g.lineTo(cx + pw, by + 4);
+    g.lineTo(cx + pw - 6, by + ph); g.lineTo(cx + 2, by + ph - 2);
+    g.closePath(); g.fillPath();
+    // 페이지 라인(글 느낌)
+    g.lineStyle(1, 0xcbb88f, 0.7);
+    for (let i = 1; i <= 3; i++) {
+      const yy = by + 4 + i * 6;
+      g.lineBetween(cx - pw + 8, yy, cx - 8, yy - 1);
+      g.lineBetween(cx + 8, yy - 1, cx + pw - 8, yy);
+    }
+    // 책등
+    g.fillStyle(0x2b1a44, 1);
+    g.fillRect(cx - 2, by - 2, 4, ph + 2);
+
+    // 회전하는 룬 마법진 (책 위에 떠 있음, 원근 위해 납작한 타원)
+    const rune = this.add.graphics().setBlendMode(ADD);
+    const R = 26;
+    rune.lineStyle(1.5, 0x8fd4ff, 0.9);
+    rune.strokeCircle(0, 0, R);
+    rune.strokeCircle(0, 0, R - 7);
+    rune.lineStyle(1, 0xb98cff, 0.8);
+    for (let i = 0; i < 12; i++) {
+      const a = (Math.PI * 2 * i) / 12;
+      const x1 = Math.cos(a) * (R - 7), y1 = Math.sin(a) * (R - 7);
+      const x2 = Math.cos(a) * R, y2 = Math.sin(a) * R;
+      rune.lineBetween(x1, y1, x2, y2);
+    }
+    // 삼각형 룬
+    rune.lineStyle(1.2, 0xffe9a8, 0.75);
+    for (let i = 0; i < 3; i++) {
+      const a = (Math.PI * 2 * i) / 3;
+      const b = a + (Math.PI * 2) / 3;
+      rune.lineBetween(Math.cos(a) * (R - 9), Math.sin(a) * (R - 9),
+                       Math.cos(b) * (R - 9), Math.sin(b) * (R - 9));
+    }
+    rune.setPosition(cx, by + 2).setScale(1, 0.42);
+    this.tweens.add({ targets: rune, angle: 360, duration: 16000, repeat: -1 });
+    this.tweens.add({ targets: rune, alpha: 0.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    // 마력 위스프 (책에서 위로 흘러나옴)
+    this.add.particles(cx, by + 6, 'px', {
+      x: { min: -pw + 12, max: pw - 12 },
+      speedY: { min: -26, max: -60 }, speedX: { min: -10, max: 10 },
+      scale: { start: 1.8, end: 0 }, alpha: { start: 0.85, end: 0 },
+      lifespan: { min: 900, max: 1600 }, frequency: 120,
+      tint: [0x8fd4ff, 0xb98cff, 0xe9dcff], blendMode: 'ADD',
+    });
+
+    // 페이지 넘김 (주기적으로 한 장이 넘어감)
+    const page = this.add.graphics();
+    const drawPage = (scaleX) => {
+      page.clear();
+      page.fillStyle(0xf7eed6, 0.96);
+      const pwCur = (pw - 6) * scaleX;
+      page.fillRoundedRect(cx + 2, by, pwCur, ph - 2, 3);
+      page.lineStyle(1, 0xcbb88f, 0.6);
+      page.lineBetween(cx + 6, by + 8, cx + 2 + pwCur - 4, by + 8);
+    };
+    drawPage(1);
+    const flip = () => {
+      const proxy = { s: 1 };
+      this.tweens.add({
+        targets: proxy, s: -1, duration: 620, ease: 'Sine.InOut',
+        onUpdate: () => drawPage(Math.abs(proxy.s)),
+        onComplete: () => {
+          SoundManager.page && SoundManager.page();
+          this.time.delayedCall(Phaser.Math.Between(2600, 4200), flip);
+        },
+      });
+    };
+    this.time.delayedCall(2600, flip);
+  }
+
+  // ---------- 마법진 (슬라임을 감싸는 회전 룬 원) ----------
+  _buildMagicCircle(cx, cy) {
+    const ADD = Phaser.BlendModes.ADD;
+    const mk = (R, color, alpha, ticks, tri) => {
+      const gg = this.add.graphics().setBlendMode(ADD);
+      gg.lineStyle(2, color, alpha);
+      gg.strokeCircle(0, 0, R);
+      gg.lineStyle(1, color, alpha * 0.8);
+      gg.strokeCircle(0, 0, R - 8);
+      // 눈금 룬
+      gg.lineStyle(1.5, color, alpha * 0.9);
+      for (let i = 0; i < ticks; i++) {
+        const a = (Math.PI * 2 * i) / ticks;
+        gg.lineBetween(Math.cos(a) * (R - 8), Math.sin(a) * (R - 8), Math.cos(a) * R, Math.sin(a) * R);
+      }
+      // 내부 삼각형/육각형 문양
+      if (tri) {
+        gg.lineStyle(1.2, color, alpha * 0.7);
+        for (let k = 0; k < tri; k++) {
+          const a = (Math.PI * 2 * k) / tri, b = a + (Math.PI * 2 * 2) / tri;
+          gg.lineBetween(Math.cos(a) * (R - 12), Math.sin(a) * (R - 12),
+                         Math.cos(b) * (R - 12), Math.sin(b) * (R - 12));
+        }
+      }
+      gg.setPosition(cx, cy).setScale(1, 0.34);   // 바닥에 눕힌 원근
+      return gg;
+    };
+
+    // 바깥 큰 원 (천천히 시계방향)
+    const outer = mk(150, 0x9a7bff, 0.5, 24, 6);
+    this.tweens.add({ targets: outer, angle: 360, duration: 26000, repeat: -1 });
+    this.tweens.add({ targets: outer, alpha: 0.32, duration: 2400, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    // 안쪽 원 (반대 방향, 청록)
+    const inner = mk(104, 0x6fd6ff, 0.55, 12, 3);
+    this.tweens.add({ targets: inner, angle: -360, duration: 18000, repeat: -1 });
+    this.tweens.add({ targets: inner, alpha: 0.35, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.InOut', delay: 400 });
+
+    // 떠다니는 룬 글리프 (마법진에서 위로 피어오름)
+    this.add.particles(cx, cy, 'px', {
+      x: { min: -120, max: 120 }, y: { min: -8, max: 8 },
+      speedY: { min: -14, max: -34 }, speedX: { min: -6, max: 6 },
+      scale: { start: 1.8, end: 0 }, alpha: { start: 0.7, end: 0 },
+      lifespan: { min: 1400, max: 2400 }, frequency: 260,
+      tint: [0x9a7bff, 0x6fd6ff, 0xe9dcff], blendMode: 'ADD',
+    });
+  }
+
+  // ---------- 슬라임 마법사 ----------
+  _buildSlime(cx, sy) {
+    const ADD = Phaser.BlendModes.ADD;
+
+    // 그림자
+    this.add.ellipse(cx, sy + 6, 92, 20, 0x000000, 0.28);
+
+    // 몸통 (호흡)
+    this.body = this.add.sprite(cx, sy, 'title_body').setOrigin(0.5, 1).setScale(6).setDepth(10);
+    this.tweens.add({ targets: this.body, scaleY: 5.7, scaleX: 6.3, duration: 900,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
+    // 몸 안 마나 코어 (은은히 맥동 — 강한 마력 암시)
+    const core = this.add.circle(cx, sy - 26, 12, 0x9fe0ff, 0.5).setBlendMode(ADD).setDepth(11);
+    this.tweens.add({ targets: core, scale: 1.5, alpha: 0.75, duration: 1100,
+      yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    const core2 = this.add.circle(cx, sy - 26, 5, 0xffffff, 0.7).setBlendMode(ADD).setDepth(11);
+    this.tweens.add({ targets: core2, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+
+    // 눈 반짝임 (양 눈 위 작은 하이라이트)
+    [-18, 18].forEach((dx) => {
+      const sparkle = this.add.circle(cx + dx, sy - 40, 3, 0xffffff, 0.9).setBlendMode(ADD).setDepth(12);
+      this.tweens.add({ targets: sparkle, scale: 1.6, alpha: 0.4, duration: 1300,
+        yoyo: true, repeat: -1, ease: 'Sine.InOut', delay: dx > 0 ? 200 : 0 });
+    });
+
+    // 모자 (몸통과 별개로 살짝 흔들림) — 몸통 위에 정렬
+    // title_body는 15x10, 6배 → 높이 60. 몸통 top = sy-60. 모자(15x5)는 그 위.
+    const hat = this.add.sprite(cx, sy - 58, 'title_hat').setOrigin(0.5, 1).setScale(6).setDepth(13);
+    hat.setAngle(-2);
+    this.tweens.add({ targets: hat, angle: 3, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    // 모자 끝 별 반짝임
+    const hatStar = this.add.circle(cx, sy - 84, 3, 0xffe9a8, 0.9).setBlendMode(ADD).setDepth(14);
+    this.tweens.add({ targets: hatStar, scale: 1.8, alpha: 0.4, duration: 900, yoyo: true, repeat: -1 });
+
+    // 눈 깜빡임 (2~3초마다)
+    const blink = () => {
+      this.body.setTexture('title_body_blink');
+      this.time.delayedCall(120, () => this.body.setTexture('title_body'));
+      this.time.delayedCall(Phaser.Math.Between(2200, 3400), blink);
+    };
+    this.time.delayedCall(Phaser.Math.Between(1500, 2500), blink);
+  }
+
+  // ---------- 공전 갱신 ----------
+  update(time) {
+    if (!this.orbs) return;
+    try { this._updateOrbs(time); } catch (e) { /* 연출 오류 무시 */ }
+  }
+
+  _updateOrbs(time) {
+    const t = time / 1000;
+    const speed = 0.9;
+    for (const o of this.orbs) {
+      const a = t * speed + o.off;
+      const x = this.orbCx + Math.cos(a) * this.orbRx;
+      const y = this.orbCy + Math.sin(a) * this.orbRy;
+      o.spr.setPosition(x, y);
+      o.glow.setPosition(x, y);
+      // 뒤쪽(위)으로 돌 땐 슬라임 뒤, 앞쪽(아래)일 땐 앞
+      const front = Math.sin(a) > 0;
+      o.spr.setDepth(front ? 16 : 6);
+      o.glow.setDepth(front ? 15 : 5);
+      const sc = front ? 2.9 : 2.3;      // 앞쪽일 때 살짝 크게(원근)
+      o.spr.setScale(sc);
+      o.spr.rotation = a * 2;
+    }
+  }
+}
+
+
+// ===== js/scenes/GameScene.js =====
+// ============================================================
+// GameScene — 전투 총괄 [Task #7: Core Roguelite Loop]
+//
+// 한 판의 흐름 (phase 하나로 분기):
+//   READY → startNextWave → FIGHTING → (전멸) → 강화 3택(UPGRADING)
+//   → 카운트다운 → 다음 웨이브 ... → WAVE 10 보스 → CLEARED(승리)
+//   중간에 HP 0 → GAME_OVER
+// ============================================================
+class GameScene extends Phaser.Scene {
+  constructor() { super('Game'); }
+
+  create() {
+    const F = BalanceData.field;
+
+    // ---- 카메라 레이어 분리 ----
+    // 메인 카메라: 월드를 줌아웃해 더 넓게 보여줌 (몬스터 시야 확보)
+    // UI 카메라: 줌 1 고정 → 조이스틱/버튼/HUD/오버레이가 안 줄어듦
+    // worldRoot에 담긴 것만 메인이 렌더, 나머지(UI)는 UI 카메라가 렌더.
+    this.worldRoot = this.add.container(0, 0);
+    this._uiObjects = [];
+
+    // ---- 필드 ----
+    this.worldRoot.add(this.add.rectangle(F.width / 2, F.height / 2, F.width, F.height, 0x2c5238));
+    const g = this.add.graphics({ fillStyle: { color: 0x315c3f } });
+    const t = 80;
+    for (let y = 0; y < F.height / t; y++)
+      for (let x = 0; x < F.width / t; x++)
+        if ((x + y) % 2 === 0) g.fillRect(x * t, y * t, t, t);
+    this.worldRoot.add(g);
+    for (let i = 0; i < 70; i++) {
+      const key = Math.random() < 0.75 ? 'grass' : 'flower';
+      this.worldRoot.add(this.add.image(Phaser.Math.Between(30, F.width - 30),
+                     Phaser.Math.Between(30, F.height - 30), key)
+        .setScale(3).setAlpha(0.9));
+    }
+
+    // ---- 파티클 이미터 ----
+    const mkEmitter = (tints) => {
+      const em = this.add.particles(0, 0, 'px', {
+        speed: { min: 60, max: 220 }, angle: { min: 0, max: 360 },
+        scale: { start: 2.2, end: 0 }, lifespan: { min: 180, max: 350 },
+        tint: tints, emitting: false,
+      });
+      em.setDepth(25);
+      this.worldRoot.add(em);
+      return em;
+    };
+    this.fxBurst = mkEmitter([0x7ee8ff, 0xd9ffe3, 0xffe9a8]);
+    this.fxEmitters = {
+      magicMissile:  mkEmitter([0x7ee8ff, 0xd9ffe3]),
+      fireball:      mkEmitter([0xff6b2b, 0xffd23f]),
+      iceSpear:      mkEmitter([0x8fe3ff, 0xe8faff]),
+      chainLightning:mkEmitter([0xfff27a, 0xb98cff]),
+    };
+    this.fxExplosion = this.add.particles(0, 0, 'px', {
+      speed: { min: 120, max: 380 }, angle: { min: 0, max: 360 },
+      scale: { start: 4.5, end: 0 }, lifespan: { min: 300, max: 620 },
+      tint: [0xffffff, 0xffd23f, 0xff8a3d, 0xff5a2b, 0x7a3020],
+      emitting: false,
+    }).setDepth(26);
+    this.worldRoot.add(this.fxExplosion);
+
+    // ---- 매니저 조립 ----
+    this.gameFeel = new GameFeelManager(this);
+    this.magicManager = new MagicManager(this);
+    this.enemyManager = new EnemyManager(this);
+    this.waveManager = new WaveManager(this);
+    this.skillManager = new SkillManager(this);
+    this.overlays = new Overlays(this);
+
+    // ---- 플레이어 + 조작 ----
+    this.player = new Player(this, F.width / 2, F.height / 2 + 200);
+    this.worldRoot.add(this.player);
+    this.joystick = new VirtualJoystick(this);
+    this.attackButton = new AttackButton(this, {
+      onTap: () => {},
+      onAimUpdate: (dir) => this._drawAim(dir),
+      onFire: (dir, power, charged) => { this._clearAim(); this._fire(dir, power, charged); },
+    });
+
+    this.aimGfx = this.add.graphics().setDepth(20);
+    this.worldRoot.add(this.aimGfx);
+
+    // ---- 전투 콜백 (엔티티 → 씬) ----
+    this.onEnemyKilled = (e) => {
+      this.enemyManager.killCount++;
+      if (GameState.run) { GameState.run.kills++; GameState.run.score += (e.data0.kind === 'boss') ? 200 : 10; }
+      this.hud.setKills(this.enemyManager.killCount);
+
+      if (e.data0.kind === 'boss') {
+        this.hud.hideBossBar();
+        this._victory();
+        return;
+      }
+      // 웨이브 종료 판정은 WaveManager.update가 담당 (전멸 감지)
+      if (this.waveManager) this.waveManager.notifyKill();
+    };
+    this.onPlayerHit = (dmg, fx, fy) => {
+      if (this.phase === Phase.GAME_OVER || this.phase === Phase.CLEARED) return;
+      const applied = this.player.takeDamage(dmg, fx, fy);
+      if (applied) {
+        this.gameFeel.shake(0.004, 90);
+        this.gameFeel.flash(0xff4444, 90);
+        SoundManager.hurt();
+      }
+    };
+    this.onPlayerDamaged = (hp) => {
+      this.hud.setHp(hp, this.player.effectiveMaxHp());
+      if (hp <= 0) this._gameOver();
+    };
+
+    // ---- 카메라 ----
+    this.cameras.main.setBounds(0, 0, F.width, F.height);
+    this.cameras.main.startFollow(this.player, false, 0.12, 0.12);
+    this.cameras.main.setZoom(BalanceData.cameraZoom || 0.7);   // 줌아웃 → 넓은 시야
+    this.cameras.main.fadeIn(250, 26, 16, 40);
+
+    // UI 전용 카메라 (줌 1). 월드는 무시하고 UI만 렌더.
+    this.uiCam = this.cameras.add(0, 0, this.scale.width, this.scale.height);
+    this.uiCam.setName('ui');
+    this.uiCam.ignore(this.worldRoot);              // UI 카메라는 월드 안 그림
+    // 화면 회전/리사이즈 시 UI 카메라 크기 + 하단 UI 재배치 (인앱 브라우저 안전)
+    this._onResize = (gs) => {
+      const W = gs.width, H = gs.height;
+      if (this.uiCam) this.uiCam.setSize(W, H);
+      if (this.attackButton) this.attackButton.reposition(W, H);
+      if (this.magicSelector) this.magicSelector.reposition(W, H);
+      if (this.backBtn) this.backBtn.setPosition(W - 16, 40);
+    };
+    this.scale.on('resize', this._onResize);
+    this.events.once('shutdown', () => { this.scale.off('resize', this._onResize); });
+
+    // ---- HUD ----
+    this.hud = new HUD(this);
+    this.registerUI(this.hud);
+    this.player.applyBonusHp();  // 강화(bonusHp) 반영 후 HP 세팅
+    this.hud.setHp(this.player.hp, this.player.effectiveMaxHp());
+    this.hud.setKills(0);
+
+    // 마법 전환 UI (HUD 이후 생성)
+    this.magicSelector = new MagicSelector(this, this.player.magicBook, (magic) => {
+      this.hud.toast(magic.data.name);
+    });
+    this.magicSelector.uiObjects.forEach(o => this.registerUI(o));
+
+    this.fpsText = this.add.text(12, 40, '', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#8f83b5',
+    }).setScrollFactor(0).setDepth(100);
+    this.registerUI(this.fpsText);
+
+    const backBtn = this.add.text(this.scale.width - 16, 40, '포기', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#8f83b5',
+      backgroundColor: '#2a1f45', padding: { x: 10, y: 6 },
+    }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(100).setInteractive();
+    this.backBtn = backBtn;
+    backBtn.on('pointerdown', (p) => {
+      if (p.event) p.event.uiHandled = true;
+      GameState.endRun();
+      this.scene.start('Title');
+    });
+    this.registerUI(backBtn);
+
+    // ---- iOS 오디오 잠금 해제 ----
+    this.input.once('pointerdown', () => SoundManager.unlock());
+
+    // ---- 조작 UI(조이스틱/공격버튼) 카메라 등록 ----
+    if (this.joystick.gfx) this.registerUI(this.joystick.gfx);
+    if (this.attackButton.uiObjects) this.attackButton.uiObjects.forEach(o => this.registerUI(o));
+
+    // ---- 첫 웨이브 시작 ----
+    this.phase = Phase.READY;
+    this.time.delayedCall(600, () => this._startNextWave());
+  }
+
+  // UI 오브젝트를 메인 카메라가 무시하도록 등록 (UI 카메라만 렌더)
+  registerUI(obj) {
+    if (!obj) return obj;
+    this._uiObjects.push(obj);
+    this.cameras.main.ignore(obj);
+    return obj;
+  }
+
+  // ---------- 웨이브 진행 ----------
+  _startNextWave() {
+    const next = (GameState.run ? GameState.run.wave : 0) + 1;
+    if (next > this.waveManager.totalWaves) { this._victory(); return; }
+    this.waveManager.startWave(next);
+  }
+
+  // WaveManager가 전멸 감지 시 호출
+  onWaveCleared(waveNum) {
+    if (this.phase !== Phase.FIGHTING) return;
+    this.phase = Phase.UPGRADING;
+    this.magicManager.clearProjectiles();
+    this._clearAim();
+
+    // 점수 보너스
+    if (GameState.run) GameState.run.score += WaveData.waveClearBonus * waveNum;
+    this.hud.announce('WAVE CLEAR', '', 0x6fdc8c);
+    SoundManager.waveClear();
+
+    // 마지막 일반 웨이브(9) 다음은 보스 → 강화 선택 후 보스전
+    this.time.delayedCall(WaveData.clearDelay * 1000, () => this._showUpgrade());
+  }
+
+  _showUpgrade() {
+    const choices = this.skillManager.pickThree();
+    if (choices.length === 0) { this._afterUpgrade(); return; }
+    this.overlays.showUpgradeChoice(choices, (picked) => {
+      try { this._applyUpgrade(picked); }
+      catch (e) { console.error('upgrade error:', e); this._afterUpgrade(); }
+    });
+  }
+
+  _applyUpgrade(picked) {
+      const result = this.skillManager.apply(picked);
+
+      // 마법 습득: 마법책에 페이지 추가 + 하단 UI 재구성
+      if (picked.learn && picked.magicKey) {
+        if (this.player.magicBook.add(picked.magicKey)) {
+          this.magicSelector.rebuild();
+          this.player.magicBook.setActiveByKey(picked.magicKey);
+          this.magicSelector.select(this.player.magicBook.activeIndex, true);
+          this.hud.announce('새 마법!', MagicData[picked.magicKey].name, 0x7ee8ff);
+          this.gameFeel.flash(0x7ee8ff, 100);
+        }
+      }
+
+      // 즉시 효과: 회복형 강화
+      if (picked.heal) this.player.healBy(picked.heal);
+      this.player.applyBonusHp();
+      this.hud.setHp(this.player.hp, this.player.effectiveMaxHp());
+
+      // 각성 연출
+      if (result.awakened && picked.evolution) {
+        this.hud.announce('★ 각성 ★', picked.evolution.name, 0xffd23f);
+        this.gameFeel.flash(0xffd23f, 120);
+        this.gameFeel.shake(0.005, 200);
+      }
+      this._afterUpgrade();
+  }
+
+  _afterUpgrade() {
+    // 다음 웨이브 카운트다운
+    this.hud.countdown(WaveData.countdown, () => this._startNextWave());
+  }
+
+  // 조준 방향 계산 (자동/수동 공통). 근접 적으로 인한 0벡터 방지(★ 차지샷 방향 버그 수정)
+  _resolveDir(dir) {
+    const px = this.player.x, py = this.player.y - 26;
+    if (dir) {
+      const dd = Math.hypot(dir.x, dir.y);
+      if (dd > 0.001) return { x: dir.x / dd, y: dir.y / dd, target: null };
+    }
+    const target = this.enemyManager.nearest(px, py, 700);
+    if (target) {
+      const tx = target.x, ty = target.y - 24;
+      const d = Math.hypot(tx - px, ty - py);
+      if (d > 8) return { x: (tx - px) / d, y: (ty - py) / d, target };
+      // 적이 몸에 겹칠 만큼 근접 → 최근 이동방향으로 발사 (엉뚱한 방향 방지)
+    }
+    const ld = this.player.lastDir;
+    const l = Math.hypot(ld.x, ld.y) || 1;
+    return { x: ld.x / l, y: ld.y / l, target };
+  }
+
+  // ---------- 발사 ----------
+  _fire(dir, power = 1, charged = false) {
+    if (this.phase !== Phase.FIGHTING) return;
+    const magic = this.player.magicBook.active;
+    if (!magic.ready) return;
+
+    const px = this.player.x, py = this.player.y - 26;
+    const aim = this._resolveDir(dir);
+    const dx = aim.x, dy = aim.y;
+
+    // 쿨다운: 전역 × 마법별 연마 × 강샷
+    const mod = GameState.magicMod(magic.data.__key);
+    const mul = Math.max(0.05,
+      (GameState.run ? GameState.run.stats.cooldownMul : 1) * PlayerData.baseCooldownMul * mod.cdMul)
+      * (charged ? 1.5 : 1);
+    magic.startCooldown(mul);
+
+    this.magicManager.cast(magic.data, px, py, dx, dy, { charged, power, chargeAmt: charged ? (power - 1) : 0 });
+    this.player.castRecoil(dx, dy, charged);
+    const fireSnd = magic.data.feel.sndFire;
+    if (charged) SoundManager.shootBig();
+    else if (SoundManager[fireSnd]) SoundManager[fireSnd]();
+  }
+
+  // ---------- 조준선 ----------
+  _drawAim(dir) {
+    const g = this.aimGfx; g.clear();
+    const px = this.player.x, py = this.player.y - 26;
+    // 자동 조준인데 사거리 내 적이 없으면 조준선 숨김
+    if (!dir) {
+      const t = this.enemyManager.nearest(px, py, 700);
+      if (!t) return;
+    }
+    const aim = this._resolveDir(dir);
+    const dx = aim.x, dy = aim.y;
+    const len = 300, seg = 18, gap = 12;
+    g.lineStyle(4, 0x7ee8ff, dir ? 0.9 : 0.35);
+    for (let s = 30; s < len; s += seg + gap) {
+      g.lineBetween(px + dx * s, py + dy * s,
+                    px + dx * Math.min(s + seg, len), py + dy * Math.min(s + seg, len));
+    }
+    const ex = px + dx * len, ey = py + dy * len;
+    const a = Math.atan2(dy, dx);
+    g.fillStyle(0x7ee8ff, dir ? 0.9 : 0.35);
+    g.fillTriangle(
+      ex + Math.cos(a) * 16, ey + Math.sin(a) * 16,
+      ex + Math.cos(a + 2.5) * 12, ey + Math.sin(a + 2.5) * 12,
+      ex + Math.cos(a - 2.5) * 12, ey + Math.sin(a - 2.5) * 12,
+    );
+  }
+  _clearAim() { this.aimGfx.clear(); }
+
+  // ---------- 결과 ----------
+  _gameOver() {
+    if (this.phase === Phase.GAME_OVER || this.phase === Phase.CLEARED) return;
+    this.phase = Phase.GAME_OVER;
+    this.gameFeel.shake(0.01, 300);
+    this._clearAim();
+    const run = GameState.run;
+    this.time.delayedCall(500, () => {
+      this.overlays.showGameOver(run,
+        () => { GameState.endRun(); GameState.newRun(); this.scene.restart(); },
+        () => { GameState.endRun(); this.scene.start('Title'); });
+    });
+  }
+
+  _victory() {
+    if (this.phase === Phase.CLEARED || this.phase === Phase.GAME_OVER) return;
+    this.phase = Phase.CLEARED;
+    this._clearAim();
+    this.gameFeel.slowMotion(0.35, 600);
+    this.gameFeel.flash(0xffffff, 200);
+    const run = GameState.run;
+    if (run) run.score += WaveData.bossBonus;
+    this.time.delayedCall(700, () => {
+      this.overlays.showVictory(run,
+        () => { GameState.endRun(); GameState.newRun(); this.scene.restart(); },
+        () => { GameState.endRun(); this.scene.start('Title'); });
+    });
+  }
+
+  // ---------- 메인 루프 ----------
+  update(time, deltaMs) {
+    try {
+      this._update(time, deltaMs);
+    } catch (e) {
+      if (!this._loggedErr) { this._loggedErr = true; console.error('update error:', e); }
+    }
+  }
+
+  _update(time, deltaMs) {
+    const dt = Math.min(deltaMs / 1000, 1 / 20);
+    this.fpsText.setText(`${Math.round(this.game.loop.actualFps)} fps`);
+
+    switch (this.phase) {
+      case Phase.READY:
+      case Phase.FIGHTING:
+        this.player.update(dt, this.joystick.vector);
+        this.attackButton.update();
+
+        if (!this.attackButton.aiming) {
+          const magic = this.player.magicBook.active;
+          if (magic.ready && this.phase === Phase.FIGHTING) {
+            const px = this.player.x, py = this.player.y - 26;
+            const target = this.enemyManager.nearest(px, py, 700);
+            if (target) this._fire(null, 1, false);
+          }
+        } else {
+          this._drawAim(this.attackButton.dir);
+        }
+
+        this.enemyManager.update(dt, this.player);
+        this.magicManager.update(dt);
+        this.waveManager.update(dt);
+        break;
+
+      case Phase.UPGRADING:
+        // 강화 선택 중: 남은 연출(사망 애니메이션 등)만 갱신, 스폰/발사 정지
+        this.player.update(dt, this.joystick.vector);
+        this.enemyManager.update(dt, this.player);
+        this.magicManager.update(dt);
+        break;
+
+      default:
+        break;
+    }
+  }
+}
+
+
+// ===== js/main.js =====
+
+// ============================================================
+// main — Phaser 게임 초기화
+// iPhone 세로 화면 기준. RESIZE 모드로 노치/홈바 포함 전체 사용.
+// ============================================================
+const config = {
+  type: Phaser.AUTO,               // WebGL 우선, 미지원 시 Canvas
+  parent: 'game-container',
+  backgroundColor: '#1a1028',
+  scale: {
+    mode: Phaser.Scale.RESIZE,     // 기기 화면 크기에 맞춤
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  physics: {
+    default: 'arcade',             // 경량 물리만 사용 (Matter 금지)
+    arcade: { debug: false },
+  },
+  render: {
+    // 전역은 LINEAR(안티앨리어싱) → 한글 텍스트 선명.
+    // 스프라이트는 PixelArt.generateAll에서 텍스처별 NEAREST로 픽셀 유지.
+    antialias: true,
+    roundPixels: true,
+  },
+  scene: [BootScene, TitleScene, GameScene],
+};
+
+function bootSlimeWizard() {
+  if (window.__booted) return;
+  if (!window.Phaser) return; // 안내 메시지는 index.html에서 처리
+  window.__booted = true;
+  try {
+    // 픽셀아트 모드에서도 한글 텍스트가 선명하도록 모든 텍스트 해상도 상향
+    const dpr = Math.min(3, Math.max(2, Math.round(window.devicePixelRatio || 2)));
+    const F = Phaser.GameObjects.GameObjectFactory.prototype;
+    if (F && F.text && !F.__resPatched) {
+      const _text = F.text;
+      F.text = function (...a) { const t = _text.apply(this, a); if (t && t.setResolution) t.setResolution(dpr); return t; };
+      F.__resPatched = true;
+    }
+    // 게임 루프 전체를 try/catch로 감싸 트윈/파티클 등 내부 오류도 잡아 표시(+한 프레임 오류로 죽지 않게)
+    if (Phaser.Game && Phaser.Game.prototype && !Phaser.Game.prototype.__stepWrapped) {
+      const _step = Phaser.Game.prototype.step;
+      Phaser.Game.prototype.step = function (t, d) {
+        try { _step.call(this, t, d); }
+        catch (e) { if (!this.__loggedStepErr) { this.__loggedStepErr = true; console.error('loop error:', e); } }
+      };
+      Phaser.Game.prototype.__stepWrapped = true;
+    }
+    new Phaser.Game(config);
+  } catch (e) {
+    window.__booted = false;
+    var el = document.getElementById('loading');
+    if (el) el.innerHTML = '<div style="font-size:34px">⚠️</div><div>실행 중 오류: ' + (e && e.message ? e.message : e) + '</div>';
+    console.error('boot error:', e);
+  }
+}
+
+// load 이벤트가 늦거나 안 오는 인앱 브라우저(카카오톡 등) 대응:
+// DOM이 준비되면 바로 부팅하고, 혹시 몰라 load/타임아웃에서도 재시도.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootSlimeWizard);
+} else {
+  bootSlimeWizard();
+}
+window.addEventListener('load', bootSlimeWizard);
+setTimeout(bootSlimeWizard, 1200);
+
+
+</script>
+</body>
+</html>
